@@ -10,22 +10,17 @@
 *&   are configured AND in active use within a chosen sales area
 *&   and date range.
 *&
-*& What it shows (one ALV tab per topic)
-*&   1. Order Doc Types        - TVAK config + count of VBAK orders
-*&                               per order type in the selection
-*&   2. Item Categories        - TVSPA assignment joined to TVSPS
+*& What it shows (one view per run, picked via radio button)
+*&   1. Order Doc Types        - TVAK + TVAKT description + count of
+*&                               VBAK orders per order type
+*&   2. Item Categories        - T184 determination joined to TVAPT
 *&                               for item-category descriptions
-*&   3. Billing Types          - TVFK config + count of VBRK invoices
-*&                               per billing type in the selection
-*&   4. Copy Control           - TVCPF copy rules (kappl V1)
-*&   5. Output Records         - NACH condition records (V1/V2/V3)
-*&                               grouped by output type / medium /
-*&                               sales area, with hit counts
-*&   6. Output Cond Types      - T685A condition type config
-*&                               (V1/V2/V3 applications)
-*&   7. Acct Determination     - VKOA revenue account assignments
-*&                               enriched with SKAT GL descriptions
-*&   8. Transactional Summary  - per (auart, vkorg, vtweg, date):
+*&   3. Billing Types          - TVFK + TVFKT description + count of
+*&                               VBRK invoices per billing type
+*&   4. Output Records         - NACH condition records (V1/V2/V3),
+*&                               counts grouped by KAPPL + KSCHL
+*&   5. Output Cond Types      - T685A condition type config (V1/V2/V3)
+*&   6. Transactional Summary  - per (auart, vkorg, vtweg, date):
 *&                               order count, net value, and invoice
 *&                               count derived via VBRK->VBRP->VBAK
 *&
@@ -38,7 +33,7 @@
 *& Tables read (READ-ONLY; no UPDATE / INSERT / MODIFY / DELETE /
 *& COMMIT against any database table — internal-table DELETE
 *& ADJACENT DUPLICATES is the only DELETE in the program):
-*&   Config:  TVAK, TVSPA, TVSPS, TVFK, TVCPF, T685A, VKOA, SKAT
+*&   Config:  TVAK, TVAKT, T184, TVAPT, TVFK, TVFKT, T685A
 *&   Trans:   VBAK, VBRK, VBRP, NACH
 *&
 *& Output
@@ -84,19 +79,10 @@ TYPES:
     count     TYPE i,
   END OF ty_bill_types,
 
-  BEGIN OF ty_bill_copy,
-    kappl     TYPE kappl,
-    fkart     TYPE fkart,
-    vbtypv    TYPE vbtyp,
-  END OF ty_bill_copy,
-
   " --- Output / NACE ---
   BEGIN OF ty_output,
     kappl     TYPE kappl,
     kschl     TYPE kschl,
-    vkorg     TYPE vkorg,
-    vtweg     TYPE vtweg,
-    spart     TYPE spart,
     count     TYPE i,
   END OF ty_output,
 
@@ -104,15 +90,6 @@ TYPES:
     kappl     TYPE kappl,
     kschl     TYPE kschl,
   END OF ty_nace_access,
-
-  " --- Account Determination ---
-  BEGIN OF ty_vkoa,
-    kappl     TYPE kappl,
-    ktosl     TYPE ktosl,
-    vkorg     TYPE vkorg,
-    sakn1     TYPE saknr,
-    txt_acct  TYPE text30,
-  END OF ty_vkoa,
 
   " --- Transactional Summary ---
   BEGIN OF ty_trans_summary,
@@ -132,10 +109,8 @@ DATA:
   gt_vbak_types    TYPE TABLE OF ty_vbak_types,
   gt_item_cat      TYPE TABLE OF ty_item_cat,
   gt_bill_types    TYPE TABLE OF ty_bill_types,
-  gt_bill_copy     TYPE TABLE OF ty_bill_copy,
   gt_output        TYPE TABLE OF ty_output,
   gt_nace_access   TYPE TABLE OF ty_nace_access,
-  gt_vkoa          TYPE TABLE OF ty_vkoa,
   gt_trans_summary TYPE TABLE OF ty_trans_summary.
 
 *----------------------------------------------------------------------*
@@ -157,10 +132,8 @@ SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
   PARAMETERS: r_ord  RADIOBUTTON GROUP r1 DEFAULT 'X',
               r_itm  RADIOBUTTON GROUP r1,
               r_bil  RADIOBUTTON GROUP r1,
-              r_cpy  RADIOBUTTON GROUP r1,
               r_out  RADIOBUTTON GROUP r1,
               r_t685 RADIOBUTTON GROUP r1,
-              r_vkoa RADIOBUTTON GROUP r1,
               r_trn  RADIOBUTTON GROUP r1.
 SELECTION-SCREEN END OF BLOCK b3.
 
@@ -188,10 +161,8 @@ START-OF-SELECTION.
     WHEN r_ord.  PERFORM fetch_sd_order_types.
     WHEN r_itm.  PERFORM fetch_item_categories.
     WHEN r_bil.  PERFORM fetch_billing_types.
-    WHEN r_cpy.  PERFORM fetch_billing_copy_control.
     WHEN r_out.  PERFORM fetch_nace_output.
     WHEN r_t685. PERFORM fetch_nace_access.
-    WHEN r_vkoa. PERFORM fetch_account_determination.
     WHEN r_trn.  PERFORM fetch_transactional_summary.
   ENDCASE.
 
@@ -245,7 +216,7 @@ ENDFORM.
 *----------------------------------------------------------------------*
 FORM fetch_item_categories.
   SELECT DISTINCT a~auart, a~pstyv, b~vtext
-    FROM tvspa AS a
+    FROM t184 AS a
     LEFT OUTER JOIN tvapt AS b
       ON b~pstyv = a~pstyv
      AND b~spras = @sy-langu
@@ -297,30 +268,15 @@ FORM fetch_billing_types.
 ENDFORM.
 
 *----------------------------------------------------------------------*
-* FORM: FETCH_BILLING_COPY_CONTROL
-* Reads copy control rules from TVCPF
-*----------------------------------------------------------------------*
-FORM fetch_billing_copy_control.
-  SELECT kappl, fkart, vbtypv
-    FROM tvcpfk
-    INTO TABLE @gt_bill_copy.
-
-  SORT gt_bill_copy BY kappl fkart vbtypv.
-ENDFORM.
-
-*----------------------------------------------------------------------*
 * FORM: FETCH_NACE_OUTPUT
 * Summarizes output condition records from NACH using GROUP BY —
 * replaces the previous loop-based accumulation.
 *----------------------------------------------------------------------*
 FORM fetch_nace_output.
-  SELECT kappl, kschl, vkorg, vtweg, spart, COUNT(*) AS count
+  SELECT kappl, kschl, COUNT(*) AS count
     FROM nach
     WHERE kappl IN ( 'V1', 'V2', 'V3' )
-      AND vkorg IN @s_vkorg
-      AND vtweg IN @s_vtweg
-      AND spart IN @s_spart
-    GROUP BY kappl, kschl, vkorg, vtweg, spart
+    GROUP BY kappl, kschl
     INTO TABLE @gt_output.
 
   SORT gt_output BY kappl kschl count DESCENDING.
@@ -337,66 +293,6 @@ FORM fetch_nace_access.
     WHERE kappl IN ( 'V1', 'V2', 'V3' ).
 
   SORT gt_nace_access BY kappl kschl.
-ENDFORM.
-
-*----------------------------------------------------------------------*
-* FORM: FETCH_ACCOUNT_DETERMINATION
-* Reads VKOA; GL account descriptions fetched in a single batch SELECT
-* using a range table — eliminates SELECT SINGLE in loop.
-*----------------------------------------------------------------------*
-FORM fetch_account_determination.
-  TYPES: BEGIN OF ty_vkoa_raw,
-           kappl TYPE kappl,
-           ktosl TYPE ktosl,
-           vkorg TYPE vkorg,
-           sakn1 TYPE saknr,
-         END OF ty_vkoa_raw,
-         BEGIN OF ty_skat_txt,
-           saknr TYPE skat-saknr,
-           txt20 TYPE skat-txt20,
-         END OF ty_skat_txt.
-
-  DATA: lt_vkoa  TYPE TABLE OF ty_vkoa_raw,
-        lr_saknr TYPE RANGE OF skat-saknr,
-        lt_skat  TYPE HASHED TABLE OF ty_skat_txt WITH UNIQUE KEY saknr.
-
-  SELECT kappl, ktosl, vkorg, sakn1
-    FROM vkoa
-    INTO TABLE @lt_vkoa
-    WHERE vkorg IN @s_vkorg.
-
-  lr_saknr = VALUE #(
-    FOR ls IN lt_vkoa WHERE ( sakn1 IS NOT INITIAL )
-    ( sign = 'I' option = 'EQ' low = ls-sakn1 ) ).
-  SORT lr_saknr BY low.
-  DELETE ADJACENT DUPLICATES FROM lr_saknr COMPARING low.
-
-  IF lr_saknr IS NOT INITIAL.
-    SELECT saknr, txt20
-      FROM skat
-      INTO TABLE @lt_skat
-      WHERE spras = @sy-langu
-        AND saknr IN @lr_saknr.
-  ENDIF.
-
-  LOOP AT lt_vkoa INTO DATA(ls_vkoa).
-    DATA(ls_out) = VALUE ty_vkoa(
-      kappl = ls_vkoa-kappl
-      ktosl = ls_vkoa-ktosl
-      vkorg = ls_vkoa-vkorg
-      sakn1 = ls_vkoa-sakn1
-    ).
-    IF ls_vkoa-sakn1 IS NOT INITIAL.
-      READ TABLE lt_skat WITH TABLE KEY saknr = ls_vkoa-sakn1
-        INTO DATA(ls_skat).
-      IF sy-subrc = 0.
-        ls_out-txt_acct = ls_skat-txt20.
-      ENDIF.
-    ENDIF.
-    APPEND ls_out TO gt_vkoa.
-  ENDLOOP.
-
-  SORT gt_vkoa BY kappl ktosl vkorg.
 ENDFORM.
 
 *----------------------------------------------------------------------*
@@ -504,12 +400,6 @@ FORM display_alv.
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_bill_types ).
 
-        WHEN r_cpy.
-          lv_title = 'Billing Copy Control'.
-          cl_salv_table=>factory(
-            IMPORTING r_salv_table = lo_alv
-            CHANGING  t_table      = gt_bill_copy ).
-
         WHEN r_out.
           lv_title = 'Output Condition Records'.
           cl_salv_table=>factory(
@@ -521,12 +411,6 @@ FORM display_alv.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_nace_access ).
-
-        WHEN r_vkoa.
-          lv_title = 'Account Determination'.
-          cl_salv_table=>factory(
-            IMPORTING r_salv_table = lo_alv
-            CHANGING  t_table      = gt_vkoa ).
 
         WHEN r_trn.
           lv_title = 'Transactional Summary'.
