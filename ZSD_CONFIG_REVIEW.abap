@@ -42,9 +42,10 @@
 *&   Trans:   VBAK, VBRK, VBRP, NACH
 *&
 *& Output
-*&   Tabbed ALV display via cl_gui_docking_container +
-*&   cl_gui_tabstrip + cl_gui_alv_grid. No spool, no file output,
-*&   no remote calls.
+*&   Object-oriented ALV display via CL_SALV_TABLE. The selection
+*&   screen offers eight radio buttons; one report run shows one
+*&   view. Re-run the report to switch views. No spool, no file
+*&   output, no remote calls.
 *&
 *& Compatibility
 *&   Requires SAP_BASIS 7.40 SP05 or higher (uses VALUE / COND /
@@ -131,42 +132,6 @@ DATA:
   gt_trans_summary TYPE TABLE OF ty_trans_summary.
 
 *----------------------------------------------------------------------*
-* FIELD CATALOGS
-*----------------------------------------------------------------------*
-DATA:
-  gt_fcat_ord   TYPE lvc_t_fcat,
-  gt_fcat_itmct TYPE lvc_t_fcat,
-  gt_fcat_bill  TYPE lvc_t_fcat,
-  gt_fcat_bcopy TYPE lvc_t_fcat,
-  gt_fcat_nace  TYPE lvc_t_fcat,
-  gt_fcat_nacac TYPE lvc_t_fcat,
-  gt_fcat_vkoa  TYPE lvc_t_fcat,
-  gt_fcat_trans TYPE lvc_t_fcat.
-
-*----------------------------------------------------------------------*
-* ALV / SCREEN OBJECTS
-*----------------------------------------------------------------------*
-DATA:
-  go_dock        TYPE REF TO cl_gui_docking_container,
-  go_tabstrip    TYPE REF TO cl_gui_tabstrip,
-  go_container1  TYPE REF TO cl_gui_custom_container,
-  go_container2  TYPE REF TO cl_gui_custom_container,
-  go_container3  TYPE REF TO cl_gui_custom_container,
-  go_container4  TYPE REF TO cl_gui_custom_container,
-  go_container5  TYPE REF TO cl_gui_custom_container,
-  go_container6  TYPE REF TO cl_gui_custom_container,
-  go_container7  TYPE REF TO cl_gui_custom_container,
-  go_container8  TYPE REF TO cl_gui_custom_container,
-  go_alv1        TYPE REF TO cl_gui_alv_grid,
-  go_alv2        TYPE REF TO cl_gui_alv_grid,
-  go_alv3        TYPE REF TO cl_gui_alv_grid,
-  go_alv4        TYPE REF TO cl_gui_alv_grid,
-  go_alv5        TYPE REF TO cl_gui_alv_grid,
-  go_alv6        TYPE REF TO cl_gui_alv_grid,
-  go_alv7        TYPE REF TO cl_gui_alv_grid,
-  go_alv8        TYPE REF TO cl_gui_alv_grid.
-
-*----------------------------------------------------------------------*
 * SELECTION SCREEN
 *----------------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
@@ -181,12 +146,24 @@ SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
   PARAMETERS: p_maxrec TYPE i DEFAULT 5000 OBLIGATORY.
 SELECTION-SCREEN END OF BLOCK b2.
 
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
+  PARAMETERS: r_ord  RADIOBUTTON GROUP r1 DEFAULT 'X',
+              r_itm  RADIOBUTTON GROUP r1,
+              r_bil  RADIOBUTTON GROUP r1,
+              r_cpy  RADIOBUTTON GROUP r1,
+              r_out  RADIOBUTTON GROUP r1,
+              r_t685 RADIOBUTTON GROUP r1,
+              r_vkoa RADIOBUTTON GROUP r1,
+              r_trn  RADIOBUTTON GROUP r1.
+SELECTION-SCREEN END OF BLOCK b3.
+
 *----------------------------------------------------------------------*
 * INITIALIZATION
 *----------------------------------------------------------------------*
 INITIALIZATION.
   TEXT-001 = 'Selection Criteria'.
   TEXT-002 = 'Performance'.
+  TEXT-003 = 'View (pick one)'.
 
 *----------------------------------------------------------------------*
 * SELECTION SCREEN VALIDATION
@@ -200,17 +177,19 @@ AT SELECTION-SCREEN.
 * START OF SELECTION
 *----------------------------------------------------------------------*
 START-OF-SELECTION.
-  PERFORM fetch_sd_order_types.
-  PERFORM fetch_item_categories.
-  PERFORM fetch_billing_types.
-  PERFORM fetch_billing_copy_control.
-  PERFORM fetch_nace_output.
-  PERFORM fetch_nace_access.
-  PERFORM fetch_account_determination.
-  PERFORM fetch_transactional_summary.
+  CASE 'X'.
+    WHEN r_ord.  PERFORM fetch_sd_order_types.
+    WHEN r_itm.  PERFORM fetch_item_categories.
+    WHEN r_bil.  PERFORM fetch_billing_types.
+    WHEN r_cpy.  PERFORM fetch_billing_copy_control.
+    WHEN r_out.  PERFORM fetch_nace_output.
+    WHEN r_t685. PERFORM fetch_nace_access.
+    WHEN r_vkoa. PERFORM fetch_account_determination.
+    WHEN r_trn.  PERFORM fetch_transactional_summary.
+  ENDCASE.
 
 END-OF-SELECTION.
-  PERFORM display_alv_tabstrip.
+  PERFORM display_alv.
 
 *----------------------------------------------------------------------*
 * FORM: FETCH_SD_ORDER_TYPES
@@ -488,223 +467,73 @@ FORM fetch_transactional_summary.
 ENDFORM.
 
 *----------------------------------------------------------------------*
-* FORM: DISPLAY_ALV_TABSTRIP
-* Builds tabstrip container with one ALV grid per tab
+* FORM: DISPLAY_ALV
+* Displays the data table that matches the selected radio button using
+* CL_SALV_TABLE (object-oriented ALV). Auto-builds the field catalog
+* from the table's structure — no manual fcat needed. No screen, no
+* container, no tabstrip: works on any 7.40+ system out of the box.
 *----------------------------------------------------------------------*
-FORM display_alv_tabstrip.
+FORM display_alv.
+  DATA: lo_alv   TYPE REF TO cl_salv_table,
+        lv_title TYPE lvc_title.
 
-  CREATE OBJECT go_dock
-    EXPORTING
-      repid     = sy-repid
-      dynnr     = sy-dynnr
-      side      = cl_gui_docking_container=>dock_at_left
-      extension = 5000.
+  TRY.
+      CASE 'X'.
+        WHEN r_ord.
+          lv_title = 'Order Document Types'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_vbak_types ).
 
-  CREATE OBJECT go_tabstrip
-    EXPORTING
-      parent = go_dock.
+        WHEN r_itm.
+          lv_title = 'Item Categories'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_item_cat ).
 
-  go_tabstrip->add_c_tab(
-    EXPORTING
-      p_id      = 'TAB1'
-      p_text    = 'Order Doc Types'
-      p_tooltip = 'Sales Order Document Type Configuration' ).
+        WHEN r_bil.
+          lv_title = 'Billing Document Types'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_bill_types ).
 
-  go_tabstrip->add_c_tab(
-    EXPORTING
-      p_id      = 'TAB2'
-      p_text    = 'Item Categories'
-      p_tooltip = 'Item Category Assignment' ).
+        WHEN r_cpy.
+          lv_title = 'Billing Copy Control'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_bill_copy ).
 
-  go_tabstrip->add_c_tab(
-    EXPORTING
-      p_id      = 'TAB3'
-      p_text    = 'Billing Types'
-      p_tooltip = 'Billing Document Type Configuration' ).
+        WHEN r_out.
+          lv_title = 'Output Condition Records'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_output ).
 
-  go_tabstrip->add_c_tab(
-    EXPORTING
-      p_id      = 'TAB4'
-      p_text    = 'Copy Control'
-      p_tooltip = 'Billing Copy Control Rules' ).
+        WHEN r_t685.
+          lv_title = 'Output Condition Types'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_nace_access ).
 
-  go_tabstrip->add_c_tab(
-    EXPORTING
-      p_id      = 'TAB5'
-      p_text    = 'Output Records'
-      p_tooltip = 'NACE Output Condition Records' ).
+        WHEN r_vkoa.
+          lv_title = 'Account Determination'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_vkoa ).
 
-  go_tabstrip->add_c_tab(
-    EXPORTING
-      p_id      = 'TAB6'
-      p_text    = 'Output Cond Types'
-      p_tooltip = 'NACE Output Condition Type Config' ).
+        WHEN r_trn.
+          lv_title = 'Transactional Summary'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_trans_summary ).
+      ENDCASE.
 
-  go_tabstrip->add_c_tab(
-    EXPORTING
-      p_id      = 'TAB7'
-      p_text    = 'Acct Determination'
-      p_tooltip = 'VKOA Account Determination to GL' ).
+      lo_alv->get_display_settings( )->set_list_header( lv_title ).
+      lo_alv->get_columns( )->set_optimize( abap_true ).
+      lo_alv->get_functions( )->set_all( ).
+      lo_alv->display( ).
 
-  go_tabstrip->add_c_tab(
-    EXPORTING
-      p_id      = 'TAB8'
-      p_text    = 'Transactional Summary'
-      p_tooltip = 'Orders and Invoices Summary' ).
-
-  CREATE OBJECT go_container1 EXPORTING parent = go_tabstrip container = 'TAB1'.
-  CREATE OBJECT go_container2 EXPORTING parent = go_tabstrip container = 'TAB2'.
-  CREATE OBJECT go_container3 EXPORTING parent = go_tabstrip container = 'TAB3'.
-  CREATE OBJECT go_container4 EXPORTING parent = go_tabstrip container = 'TAB4'.
-  CREATE OBJECT go_container5 EXPORTING parent = go_tabstrip container = 'TAB5'.
-  CREATE OBJECT go_container6 EXPORTING parent = go_tabstrip container = 'TAB6'.
-  CREATE OBJECT go_container7 EXPORTING parent = go_tabstrip container = 'TAB7'.
-  CREATE OBJECT go_container8 EXPORTING parent = go_tabstrip container = 'TAB8'.
-
-  PERFORM build_alv_order_types   USING go_container1.
-  PERFORM build_alv_item_cat      USING go_container2.
-  PERFORM build_alv_bill_types    USING go_container3.
-  PERFORM build_alv_copy_control  USING go_container4.
-  PERFORM build_alv_nace_output   USING go_container5.
-  PERFORM build_alv_nace_access   USING go_container6.
-  PERFORM build_alv_vkoa          USING go_container7.
-  PERFORM build_alv_trans         USING go_container8.
-
-ENDFORM.
-
-*----------------------------------------------------------------------*
-* FORM: BUILD_ALV_ORDER_TYPES
-*----------------------------------------------------------------------*
-FORM build_alv_order_types USING po_cont TYPE REF TO cl_gui_custom_container.
-  gt_fcat_ord = VALUE lvc_t_fcat(
-    ( fieldname = 'AUART' coltext = 'Doc Type'    outputlen = 8  )
-    ( fieldname = 'BEZEI' coltext = 'Description' outputlen = 30 )
-    ( fieldname = 'COUNT' coltext = 'Order Count' outputlen = 12 ) ).
-
-  CREATE OBJECT go_alv1 EXPORTING i_parent = po_cont.
-  go_alv1->set_table_for_first_display(
-    EXPORTING i_structure_name = space
-    CHANGING  it_fieldcatalog  = gt_fcat_ord
-              it_outtab        = gt_vbak_types ).
-ENDFORM.
-
-*----------------------------------------------------------------------*
-* FORM: BUILD_ALV_ITEM_CAT
-*----------------------------------------------------------------------*
-FORM build_alv_item_cat USING po_cont TYPE REF TO cl_gui_custom_container.
-  gt_fcat_itmct = VALUE lvc_t_fcat(
-    ( fieldname = 'AUART' coltext = 'Sales Doc Type' outputlen = 8  )
-    ( fieldname = 'PSTYV' coltext = 'Item Category'  outputlen = 8  )
-    ( fieldname = 'VTEXT' coltext = 'Description'    outputlen = 30 ) ).
-
-  CREATE OBJECT go_alv2 EXPORTING i_parent = po_cont.
-  go_alv2->set_table_for_first_display(
-    EXPORTING i_structure_name = space
-    CHANGING  it_fieldcatalog  = gt_fcat_itmct
-              it_outtab        = gt_item_cat ).
-ENDFORM.
-
-*----------------------------------------------------------------------*
-* FORM: BUILD_ALV_BILL_TYPES
-*----------------------------------------------------------------------*
-FORM build_alv_bill_types USING po_cont TYPE REF TO cl_gui_custom_container.
-  gt_fcat_bill = VALUE lvc_t_fcat(
-    ( fieldname = 'FKART' coltext = 'Billing Type'  outputlen = 8  )
-    ( fieldname = 'VTEXT' coltext = 'Description'   outputlen = 30 )
-    ( fieldname = 'COUNT' coltext = 'Invoice Count' outputlen = 12 ) ).
-
-  CREATE OBJECT go_alv3 EXPORTING i_parent = po_cont.
-  go_alv3->set_table_for_first_display(
-    EXPORTING i_structure_name = space
-    CHANGING  it_fieldcatalog  = gt_fcat_bill
-              it_outtab        = gt_bill_types ).
-ENDFORM.
-
-*----------------------------------------------------------------------*
-* FORM: BUILD_ALV_COPY_CONTROL
-*----------------------------------------------------------------------*
-FORM build_alv_copy_control USING po_cont TYPE REF TO cl_gui_custom_container.
-  gt_fcat_bcopy = VALUE lvc_t_fcat(
-    ( fieldname = 'KAPPL'  coltext = 'Application'      outputlen = 6 )
-    ( fieldname = 'FKART'  coltext = 'Target Bill Type' outputlen = 8 )
-    ( fieldname = 'VBTYPV' coltext = 'Source Doc Cat'   outputlen = 6 ) ).
-
-  CREATE OBJECT go_alv4 EXPORTING i_parent = po_cont.
-  go_alv4->set_table_for_first_display(
-    EXPORTING i_structure_name = space
-    CHANGING  it_fieldcatalog  = gt_fcat_bcopy
-              it_outtab        = gt_bill_copy ).
-ENDFORM.
-
-*----------------------------------------------------------------------*
-* FORM: BUILD_ALV_NACE_OUTPUT
-*----------------------------------------------------------------------*
-FORM build_alv_nace_output USING po_cont TYPE REF TO cl_gui_custom_container.
-  gt_fcat_nace = VALUE lvc_t_fcat(
-    ( fieldname = 'KAPPL' coltext = 'Application'  outputlen = 6  )
-    ( fieldname = 'KSCHL' coltext = 'Output Type'  outputlen = 8  )
-    ( fieldname = 'VKORG' coltext = 'Sales Org'    outputlen = 6  )
-    ( fieldname = 'VTWEG' coltext = 'Dist Channel' outputlen = 6  )
-    ( fieldname = 'SPART' coltext = 'Division'     outputlen = 6  )
-    ( fieldname = 'COUNT' coltext = 'Record Count' outputlen = 10 ) ).
-
-  CREATE OBJECT go_alv5 EXPORTING i_parent = po_cont.
-  go_alv5->set_table_for_first_display(
-    EXPORTING i_structure_name = space
-    CHANGING  it_fieldcatalog  = gt_fcat_nace
-              it_outtab        = gt_output ).
-ENDFORM.
-
-*----------------------------------------------------------------------*
-* FORM: BUILD_ALV_NACE_ACCESS
-*----------------------------------------------------------------------*
-FORM build_alv_nace_access USING po_cont TYPE REF TO cl_gui_custom_container.
-  gt_fcat_nacac = VALUE lvc_t_fcat(
-    ( fieldname = 'KAPPL' coltext = 'Application' outputlen = 6 )
-    ( fieldname = 'KSCHL' coltext = 'Cond Type'   outputlen = 8 ) ).
-
-  CREATE OBJECT go_alv6 EXPORTING i_parent = po_cont.
-  go_alv6->set_table_for_first_display(
-    EXPORTING i_structure_name = space
-    CHANGING  it_fieldcatalog  = gt_fcat_nacac
-              it_outtab        = gt_nace_access ).
-ENDFORM.
-
-*----------------------------------------------------------------------*
-* FORM: BUILD_ALV_VKOA
-*----------------------------------------------------------------------*
-FORM build_alv_vkoa USING po_cont TYPE REF TO cl_gui_custom_container.
-  gt_fcat_vkoa = VALUE lvc_t_fcat(
-    ( fieldname = 'KAPPL'    coltext = 'Application'    outputlen = 6  )
-    ( fieldname = 'KTOSL'    coltext = 'Trans Key'      outputlen = 6  )
-    ( fieldname = 'VKORG'    coltext = 'Sales Org'      outputlen = 6  )
-    ( fieldname = 'SAKN1'    coltext = 'GL Account'     outputlen = 10 )
-    ( fieldname = 'TXT_ACCT' coltext = 'GL Description' outputlen = 30 ) ).
-
-  CREATE OBJECT go_alv7 EXPORTING i_parent = po_cont.
-  go_alv7->set_table_for_first_display(
-    EXPORTING i_structure_name = space
-    CHANGING  it_fieldcatalog  = gt_fcat_vkoa
-              it_outtab        = gt_vkoa ).
-ENDFORM.
-
-*----------------------------------------------------------------------*
-* FORM: BUILD_ALV_TRANS
-*----------------------------------------------------------------------*
-FORM build_alv_trans USING po_cont TYPE REF TO cl_gui_custom_container.
-  gt_fcat_trans = VALUE lvc_t_fcat(
-    ( fieldname = 'VKORG'     coltext = 'Sales Org'     outputlen = 6  )
-    ( fieldname = 'VTWEG'     coltext = 'Dist Channel'  outputlen = 6  )
-    ( fieldname = 'AUART'     coltext = 'Order Type'    outputlen = 8  )
-    ( fieldname = 'ERDAT'     coltext = 'Date'          outputlen = 10 )
-    ( fieldname = 'ORDER_CNT' coltext = 'Order Count'   outputlen = 10 )
-    ( fieldname = 'BILL_CNT'  coltext = 'Invoice Count' outputlen = 10 )
-    ( fieldname = 'NET_VAL'   coltext = 'Net Value'     outputlen = 15
-      datatype = 'CURR' ) ).
-
-  CREATE OBJECT go_alv8 EXPORTING i_parent = po_cont.
-  go_alv8->set_table_for_first_display(
-    EXPORTING i_structure_name = space
-    CHANGING  it_fieldcatalog  = gt_fcat_trans
-              it_outtab        = gt_trans_summary ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv->get_text( ) TYPE 'I'.
+  ENDTRY.
 ENDFORM.
