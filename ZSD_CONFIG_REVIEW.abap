@@ -100,8 +100,8 @@ TYPES:
     vkorg     TYPE vkorg,
     vtweg     TYPE vtweg,
     spart     TYPE spart,
-    nacha     TYPE nacha,
-    fonam     TYPE fonam,
+    nacha     TYPE nast-nacha,
+    fonam     TYPE nast-fonam,
     count     TYPE i,
   END OF ty_output,
 
