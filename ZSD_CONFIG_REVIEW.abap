@@ -60,7 +60,7 @@ TYPES:
   BEGIN OF ty_vbak_types,
     auart     TYPE tvak-auart,
     bezei     TYPE tvakt-bezei,
-    autyp     TYPE tvak-autyp,
+    vbtyp     TYPE tvak-vbtyp,
     abstk     TYPE tvak-abstk,
     faktyp    TYPE tvak-faktyp,
     prsfd     TYPE tvak-prsfd,
@@ -249,7 +249,7 @@ FORM fetch_sd_order_types.
         lt_auart_cnt TYPE HASHED TABLE OF ty_auart_cnt
                      WITH UNIQUE KEY auart.
 
-  SELECT a~auart, t~bezei, a~autyp, a~abstk, a~faktyp, a~prsfd
+  SELECT a~auart, t~bezei, a~vbtyp, a~abstk, a~faktyp, a~prsfd
     FROM tvak AS a
     LEFT OUTER JOIN tvakt AS t
       ON t~auart = a~auart
@@ -603,7 +603,7 @@ FORM build_alv_order_types USING po_cont TYPE REF TO cl_gui_custom_container.
   gt_fcat_ord = VALUE lvc_t_fcat(
     ( fieldname = 'AUART'  coltext = 'Doc Type'        outputlen = 8  )
     ( fieldname = 'BEZEI'  coltext = 'Description'     outputlen = 30 )
-    ( fieldname = 'AUTYP'  coltext = 'SD Doc Category' outputlen = 6  )
+    ( fieldname = 'VBTYP'  coltext = 'SD Doc Category' outputlen = 6  )
     ( fieldname = 'ABSTK'  coltext = 'Rejection Status' outputlen = 6 )
     ( fieldname = 'FAKTYP' coltext = 'Billing Type'    outputlen = 6  )
     ( fieldname = 'PRSFD'  coltext = 'Pricing'         outputlen = 6  )
