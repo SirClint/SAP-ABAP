@@ -54,6 +54,13 @@
 REPORT zsd_config_review.
 
 *----------------------------------------------------------------------*
+* TABLE WORK AREAS
+* Required for SELECT-OPTIONS FOR vbak-<field> to resolve the
+* column reference at compile time.
+*----------------------------------------------------------------------*
+TABLES: vbak.
+
+*----------------------------------------------------------------------*
 * TYPE DEFINITIONS
 *----------------------------------------------------------------------*
 TYPES:
