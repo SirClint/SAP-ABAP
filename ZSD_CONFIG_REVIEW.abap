@@ -60,29 +60,19 @@ TYPES:
   BEGIN OF ty_vbak_types,
     auart     TYPE auart,
     bezei     TYPE text30,
-    vbtyp     TYPE vbtyp,
-    fkara     TYPE fkart,
-    fkarv     TYPE fkart,
     count     TYPE i,
   END OF ty_vbak_types,
 
   BEGIN OF ty_item_cat,
+    auart     TYPE auart,
     pstyv     TYPE pstyv,
     vtext     TYPE text30,
-    auart     TYPE auart,
-    mtpos     TYPE mtpos,
-    posit     TYPE pstyv,
-    erzet     TYPE erzet,
-    abgru     TYPE abgru,
   END OF ty_item_cat,
 
   " --- Billing Config ---
   BEGIN OF ty_bill_types,
     fkart     TYPE fkart,
     vtext     TYPE text30,
-    fktyp     TYPE fktyp,
-    sfakn     TYPE sfakn,
-    rfbsk     TYPE rfbsk,
     count     TYPE i,
   END OF ty_bill_types,
 
@@ -90,7 +80,6 @@ TYPES:
     kappl     TYPE kappl,
     fkart     TYPE fkart,
     vbtypv    TYPE vbtyp,
-    kopgr     TYPE kopgr,
   END OF ty_bill_copy,
 
   " --- Output / NACE ---
@@ -100,17 +89,12 @@ TYPES:
     vkorg     TYPE vkorg,
     vtweg     TYPE vtweg,
     spart     TYPE spart,
-    nacha     TYPE nast-nacha,
-    fonam     TYPE nast-fonam,
     count     TYPE i,
   END OF ty_output,
 
   BEGIN OF ty_nace_access,
     kappl     TYPE kappl,
     kschl     TYPE kschl,
-    kozgf     TYPE kozgf,
-    krech     TYPE krech,
-    kobed     TYPE kobed,
   END OF ty_nace_access,
 
   " --- Account Determination ---
@@ -118,10 +102,7 @@ TYPES:
     kappl     TYPE kappl,
     ktosl     TYPE ktosl,
     vkorg     TYPE vkorg,
-    ktgrd     TYPE ktgrd,
-    ktgrm     TYPE ktgrm,
     sakn1     TYPE saknr,
-    sakn2     TYPE saknr,
     txt_acct  TYPE text30,
   END OF ty_vkoa,
 
@@ -246,7 +227,7 @@ FORM fetch_sd_order_types.
         lt_auart_cnt TYPE HASHED TABLE OF ty_auart_cnt
                      WITH UNIQUE KEY auart.
 
-  SELECT a~auart, t~bezei, a~vbtyp, a~fkara, a~fkarv
+  SELECT a~auart, t~bezei
     FROM tvak AS a
     LEFT OUTER JOIN tvakt AS t
       ON t~auart = a~auart
@@ -277,7 +258,7 @@ ENDFORM.
 * Reads item category config using a JOIN — eliminates SELECT in loop.
 *----------------------------------------------------------------------*
 FORM fetch_item_categories.
-  SELECT a~pstyv, b~vtext, a~auart, a~mtpos, a~posit, a~erzet, a~abgru
+  SELECT DISTINCT a~auart, a~pstyv, b~vtext
     FROM tvspa AS a
     LEFT OUTER JOIN tvapt AS b
       ON b~pstyv = a~pstyv
@@ -286,7 +267,6 @@ FORM fetch_item_categories.
     WHERE a~auart IN @s_auart.
 
   SORT gt_item_cat BY auart pstyv.
-  DELETE ADJACENT DUPLICATES FROM gt_item_cat COMPARING auart pstyv mtpos.
 ENDFORM.
 
 *----------------------------------------------------------------------*
@@ -304,7 +284,7 @@ FORM fetch_billing_types.
         lt_fkart_cnt TYPE HASHED TABLE OF ty_fkart_cnt
                      WITH UNIQUE KEY fkart.
 
-  SELECT a~fkart, t~vtext, a~fktyp, a~sfakn, a~rfbsk
+  SELECT a~fkart, t~vtext
     FROM tvfk AS a
     LEFT OUTER JOIN tvfkt AS t
       ON t~fkart = a~fkart
@@ -335,7 +315,7 @@ ENDFORM.
 * Reads copy control rules from TVCPF
 *----------------------------------------------------------------------*
 FORM fetch_billing_copy_control.
-  SELECT kappl, fkart, vbtypv, kopgr
+  SELECT kappl, fkart, vbtypv
     FROM tvcpfk
     INTO TABLE @gt_bill_copy.
 
@@ -348,13 +328,13 @@ ENDFORM.
 * replaces the previous loop-based accumulation.
 *----------------------------------------------------------------------*
 FORM fetch_nace_output.
-  SELECT kappl, kschl, vkorg, vtweg, spart, nacha, fonam, COUNT(*) AS count
+  SELECT kappl, kschl, vkorg, vtweg, spart, COUNT(*) AS count
     FROM nach
     WHERE kappl IN ( 'V1', 'V2', 'V3' )
       AND vkorg IN @s_vkorg
       AND vtweg IN @s_vtweg
       AND spart IN @s_spart
-    GROUP BY kappl, kschl, vkorg, vtweg, spart, nacha, fonam
+    GROUP BY kappl, kschl, vkorg, vtweg, spart
     INTO TABLE @gt_output.
 
   SORT gt_output BY kappl kschl count DESCENDING.
@@ -365,7 +345,7 @@ ENDFORM.
 * Reads output condition type config from T685A
 *----------------------------------------------------------------------*
 FORM fetch_nace_access.
-  SELECT kappl, kschl, kozgf, krech, kobed
+  SELECT DISTINCT kappl, kschl
     FROM t685a
     INTO TABLE @gt_nace_access
     WHERE kappl IN ( 'V1', 'V2', 'V3' ).
@@ -383,10 +363,7 @@ FORM fetch_account_determination.
            kappl TYPE kappl,
            ktosl TYPE ktosl,
            vkorg TYPE vkorg,
-           ktgrd TYPE ktgrd,
-           ktgrm TYPE ktgrm,
            sakn1 TYPE saknr,
-           sakn2 TYPE saknr,
          END OF ty_vkoa_raw,
          BEGIN OF ty_skat_txt,
            saknr TYPE skat-saknr,
@@ -397,17 +374,14 @@ FORM fetch_account_determination.
         lr_saknr TYPE RANGE OF skat-saknr,
         lt_skat  TYPE HASHED TABLE OF ty_skat_txt WITH UNIQUE KEY saknr.
 
-  SELECT kappl, ktosl, vkorg, ktgrd, ktgrm, sakn1, sakn2
+  SELECT kappl, ktosl, vkorg, sakn1
     FROM vkoa
     INTO TABLE @lt_vkoa
     WHERE vkorg IN @s_vkorg.
 
-  " Build GL account range from both revenue and provision accounts
   lr_saknr = VALUE #(
-    ( FOR ls IN lt_vkoa WHERE ( sakn1 IS NOT INITIAL )
-        sign = 'I' option = 'EQ' low = ls-sakn1 )
-    ( FOR ls IN lt_vkoa WHERE ( sakn2 IS NOT INITIAL )
-        sign = 'I' option = 'EQ' low = ls-sakn2 ) ).
+    FOR ls IN lt_vkoa WHERE ( sakn1 IS NOT INITIAL )
+    ( sign = 'I' option = 'EQ' low = ls-sakn1 ) ).
   SORT lr_saknr BY low.
   DELETE ADJACENT DUPLICATES FROM lr_saknr COMPARING low.
 
@@ -424,10 +398,7 @@ FORM fetch_account_determination.
       kappl = ls_vkoa-kappl
       ktosl = ls_vkoa-ktosl
       vkorg = ls_vkoa-vkorg
-      ktgrd = ls_vkoa-ktgrd
-      ktgrm = ls_vkoa-ktgrm
       sakn1 = ls_vkoa-sakn1
-      sakn2 = ls_vkoa-sakn2
     ).
     IF ls_vkoa-sakn1 IS NOT INITIAL.
       READ TABLE lt_skat WITH TABLE KEY saknr = ls_vkoa-sakn1
@@ -606,12 +577,9 @@ ENDFORM.
 *----------------------------------------------------------------------*
 FORM build_alv_order_types USING po_cont TYPE REF TO cl_gui_custom_container.
   gt_fcat_ord = VALUE lvc_t_fcat(
-    ( fieldname = 'AUART' coltext = 'Doc Type'         outputlen = 8  )
-    ( fieldname = 'BEZEI' coltext = 'Description'      outputlen = 30 )
-    ( fieldname = 'VBTYP' coltext = 'SD Doc Category'  outputlen = 6  )
-    ( fieldname = 'FKARA' coltext = 'Bill Type (Ord)'  outputlen = 6  )
-    ( fieldname = 'FKARV' coltext = 'Bill Type (Dlv)'  outputlen = 6  )
-    ( fieldname = 'COUNT' coltext = 'Order Count'      outputlen = 12 ) ).
+    ( fieldname = 'AUART' coltext = 'Doc Type'    outputlen = 8  )
+    ( fieldname = 'BEZEI' coltext = 'Description' outputlen = 30 )
+    ( fieldname = 'COUNT' coltext = 'Order Count' outputlen = 12 ) ).
 
   CREATE OBJECT go_alv1 EXPORTING i_parent = po_cont.
   go_alv1->set_table_for_first_display(
@@ -625,13 +593,9 @@ ENDFORM.
 *----------------------------------------------------------------------*
 FORM build_alv_item_cat USING po_cont TYPE REF TO cl_gui_custom_container.
   gt_fcat_itmct = VALUE lvc_t_fcat(
-    ( fieldname = 'AUART' coltext = 'Sales Doc Type'    outputlen = 8  )
-    ( fieldname = 'PSTYV' coltext = 'Item Category'     outputlen = 8  )
-    ( fieldname = 'VTEXT' coltext = 'Description'       outputlen = 30 )
-    ( fieldname = 'MTPOS' coltext = 'Material Type'     outputlen = 8  )
-    ( fieldname = 'POSIT' coltext = 'Higher-Level Item' outputlen = 6  )
-    ( fieldname = 'ERZET' coltext = 'Manual Entry'      outputlen = 6  )
-    ( fieldname = 'ABGRU' coltext = 'Rejection Reason'  outputlen = 6  ) ).
+    ( fieldname = 'AUART' coltext = 'Sales Doc Type' outputlen = 8  )
+    ( fieldname = 'PSTYV' coltext = 'Item Category'  outputlen = 8  )
+    ( fieldname = 'VTEXT' coltext = 'Description'    outputlen = 30 ) ).
 
   CREATE OBJECT go_alv2 EXPORTING i_parent = po_cont.
   go_alv2->set_table_for_first_display(
@@ -645,12 +609,9 @@ ENDFORM.
 *----------------------------------------------------------------------*
 FORM build_alv_bill_types USING po_cont TYPE REF TO cl_gui_custom_container.
   gt_fcat_bill = VALUE lvc_t_fcat(
-    ( fieldname = 'FKART' coltext = 'Billing Type'      outputlen = 8  )
-    ( fieldname = 'VTEXT' coltext = 'Description'       outputlen = 30 )
-    ( fieldname = 'FKTYP' coltext = 'SD Doc Category'   outputlen = 6  )
-    ( fieldname = 'SFAKN' coltext = 'Cancellation Type' outputlen = 8  )
-    ( fieldname = 'RFBSK' coltext = 'Posting Status'    outputlen = 6  )
-    ( fieldname = 'COUNT' coltext = 'Invoice Count'     outputlen = 12 ) ).
+    ( fieldname = 'FKART' coltext = 'Billing Type'  outputlen = 8  )
+    ( fieldname = 'VTEXT' coltext = 'Description'   outputlen = 30 )
+    ( fieldname = 'COUNT' coltext = 'Invoice Count' outputlen = 12 ) ).
 
   CREATE OBJECT go_alv3 EXPORTING i_parent = po_cont.
   go_alv3->set_table_for_first_display(
@@ -666,8 +627,7 @@ FORM build_alv_copy_control USING po_cont TYPE REF TO cl_gui_custom_container.
   gt_fcat_bcopy = VALUE lvc_t_fcat(
     ( fieldname = 'KAPPL'  coltext = 'Application'      outputlen = 6 )
     ( fieldname = 'FKART'  coltext = 'Target Bill Type' outputlen = 8 )
-    ( fieldname = 'VBTYPV' coltext = 'Source Doc Cat'   outputlen = 6 )
-    ( fieldname = 'KOPGR'  coltext = 'Hdr Copy Routine' outputlen = 6 ) ).
+    ( fieldname = 'VBTYPV' coltext = 'Source Doc Cat'   outputlen = 6 ) ).
 
   CREATE OBJECT go_alv4 EXPORTING i_parent = po_cont.
   go_alv4->set_table_for_first_display(
@@ -686,8 +646,6 @@ FORM build_alv_nace_output USING po_cont TYPE REF TO cl_gui_custom_container.
     ( fieldname = 'VKORG' coltext = 'Sales Org'    outputlen = 6  )
     ( fieldname = 'VTWEG' coltext = 'Dist Channel' outputlen = 6  )
     ( fieldname = 'SPART' coltext = 'Division'     outputlen = 6  )
-    ( fieldname = 'NACHA' coltext = 'Medium'       outputlen = 6  )
-    ( fieldname = 'FONAM' coltext = 'Form Name'    outputlen = 20 )
     ( fieldname = 'COUNT' coltext = 'Record Count' outputlen = 10 ) ).
 
   CREATE OBJECT go_alv5 EXPORTING i_parent = po_cont.
@@ -702,11 +660,8 @@ ENDFORM.
 *----------------------------------------------------------------------*
 FORM build_alv_nace_access USING po_cont TYPE REF TO cl_gui_custom_container.
   gt_fcat_nacac = VALUE lvc_t_fcat(
-    ( fieldname = 'KAPPL' coltext = 'Application' outputlen = 6  )
-    ( fieldname = 'KSCHL' coltext = 'Cond Type'   outputlen = 8  )
-    ( fieldname = 'KOZGF' coltext = 'Access Seq'  outputlen = 8  )
-    ( fieldname = 'KRECH' coltext = 'Calc Type'   outputlen = 6  )
-    ( fieldname = 'KOBED' coltext = 'Requirement' outputlen = 6  ) ).
+    ( fieldname = 'KAPPL' coltext = 'Application' outputlen = 6 )
+    ( fieldname = 'KSCHL' coltext = 'Cond Type'   outputlen = 8 ) ).
 
   CREATE OBJECT go_alv6 EXPORTING i_parent = po_cont.
   go_alv6->set_table_for_first_display(
@@ -720,14 +675,11 @@ ENDFORM.
 *----------------------------------------------------------------------*
 FORM build_alv_vkoa USING po_cont TYPE REF TO cl_gui_custom_container.
   gt_fcat_vkoa = VALUE lvc_t_fcat(
-    ( fieldname = 'KAPPL'    coltext = 'Application'     outputlen = 6  )
-    ( fieldname = 'KTOSL'    coltext = 'Trans Key'       outputlen = 6  )
-    ( fieldname = 'VKORG'    coltext = 'Sales Org'       outputlen = 6  )
-    ( fieldname = 'KTGRD'    coltext = 'Cust Acct Grp'   outputlen = 6  )
-    ( fieldname = 'KTGRM'    coltext = 'Matl Acct Grp'   outputlen = 6  )
-    ( fieldname = 'SAKN1'    coltext = 'GL Account'      outputlen = 10 )
-    ( fieldname = 'SAKN2'    coltext = 'GL Acct (Prov)'  outputlen = 10 )
-    ( fieldname = 'TXT_ACCT' coltext = 'GL Description'  outputlen = 30 ) ).
+    ( fieldname = 'KAPPL'    coltext = 'Application'    outputlen = 6  )
+    ( fieldname = 'KTOSL'    coltext = 'Trans Key'      outputlen = 6  )
+    ( fieldname = 'VKORG'    coltext = 'Sales Org'      outputlen = 6  )
+    ( fieldname = 'SAKN1'    coltext = 'GL Account'     outputlen = 10 )
+    ( fieldname = 'TXT_ACCT' coltext = 'GL Description' outputlen = 30 ) ).
 
   CREATE OBJECT go_alv7 EXPORTING i_parent = po_cont.
   go_alv7->set_table_for_first_display(
