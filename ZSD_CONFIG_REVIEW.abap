@@ -59,7 +59,7 @@ TYPES:
   " --- Sales Order Config ---
   BEGIN OF ty_vbak_types,
     auart     TYPE tvak-auart,
-    bezei     TYPE tvak-bezei,
+    bezei     TYPE tvakt-bezei,
     autyp     TYPE tvak-autyp,
     abstk     TYPE tvak-abstk,
     faktyp    TYPE tvak-faktyp,
@@ -68,8 +68,8 @@ TYPES:
   END OF ty_vbak_types,
 
   BEGIN OF ty_item_cat,
-    pstyv     TYPE tvsps-pstyv,
-    vtext     TYPE tvsps-vtext,
+    pstyv     TYPE tvspa-pstyv,
+    vtext     TYPE tvapt-vtext,
     auart     TYPE tvspa-auart,
     mtpos     TYPE tvspa-mtpos,
     posit     TYPE tvspa-posit,
@@ -80,7 +80,7 @@ TYPES:
   " --- Billing Config ---
   BEGIN OF ty_bill_types,
     fkart     TYPE tvfk-fkart,
-    vtext     TYPE tvfk-vtext,
+    vtext     TYPE tvfkt-vtext,
     fktyp     TYPE tvfk-fktyp,
     sfakn     TYPE tvfk-sfakn,
     rplkz     TYPE tvfk-rplkz,
@@ -249,8 +249,11 @@ FORM fetch_sd_order_types.
         lt_auart_cnt TYPE HASHED TABLE OF ty_auart_cnt
                      WITH UNIQUE KEY auart.
 
-  SELECT auart, bezei, autyp, abstk, faktyp, prsfd
-    FROM tvak
+  SELECT a~auart, t~bezei, a~autyp, a~abstk, a~faktyp, a~prsfd
+    FROM tvak AS a
+    LEFT OUTER JOIN tvakt AS t
+      ON t~auart = a~auart
+     AND t~spras = @sy-langu
     INTO CORRESPONDING FIELDS OF TABLE @lt_tvak.
 
   SELECT auart, COUNT(*) AS cnt
@@ -279,7 +282,9 @@ ENDFORM.
 FORM fetch_item_categories.
   SELECT a~pstyv, b~vtext, a~auart, a~mtpos, a~posit, a~erzet, a~abgru
     FROM tvspa AS a
-    LEFT OUTER JOIN tvsps AS b ON a~pstyv = b~pstyv
+    LEFT OUTER JOIN tvapt AS b
+      ON b~pstyv = a~pstyv
+     AND b~spras = @sy-langu
     INTO TABLE @gt_item_cat
     WHERE a~auart IN @s_auart.
 
@@ -302,8 +307,11 @@ FORM fetch_billing_types.
         lt_fkart_cnt TYPE HASHED TABLE OF ty_fkart_cnt
                      WITH UNIQUE KEY fkart.
 
-  SELECT fkart, vtext, fktyp, sfakn, rplkz
-    FROM tvfk
+  SELECT a~fkart, t~vtext, a~fktyp, a~sfakn, a~rplkz
+    FROM tvfk AS a
+    LEFT OUTER JOIN tvfkt AS t
+      ON t~fkart = a~fkart
+     AND t~spras = @sy-langu
     INTO CORRESPONDING FIELDS OF TABLE @lt_tvfk.
 
   SELECT fkart, COUNT(*) AS cnt
