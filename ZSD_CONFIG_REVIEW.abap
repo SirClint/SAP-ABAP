@@ -1,13 +1,54 @@
 *&---------------------------------------------------------------------*
 *& Report  ZSD_CONFIG_REVIEW
 *& Title:  SD Module Configuration & Transactional Review
-*& Author: Generated
-*& Desc:   Reviews SD configuration and transactional data across:
-*&           - Sales Order Document Types & Item Categories
-*&           - Billing/Invoice Configuration
-*&           - Output (NACE) Condition Records
-*&           - Account Determination (VKOA to GL)
-*&         Displays results in a tabbed ALV interface.
+*&---------------------------------------------------------------------*
+*& Purpose
+*&   Read-only diagnostic report for the SD (Sales & Distribution)
+*&   module. Cross-references master configuration against actual
+*&   transactional volume so consultants can quickly see which
+*&   document types, output records, and account determinations
+*&   are configured AND in active use within a chosen sales area
+*&   and date range.
+*&
+*& What it shows (one ALV tab per topic)
+*&   1. Order Doc Types        - TVAK config + count of VBAK orders
+*&                               per order type in the selection
+*&   2. Item Categories        - TVSPA assignment joined to TVSPS
+*&                               for item-category descriptions
+*&   3. Billing Types          - TVFK config + count of VBRK invoices
+*&                               per billing type in the selection
+*&   4. Copy Control           - TVCPF copy rules (kappl V1)
+*&   5. Output Records         - NACH condition records (V1/V2/V3)
+*&                               grouped by output type / medium /
+*&                               sales area, with hit counts
+*&   6. Output Cond Types      - T685A condition type config
+*&                               (V1/V2/V3 applications)
+*&   7. Acct Determination     - VKOA revenue account assignments
+*&                               enriched with SKAT GL descriptions
+*&   8. Transactional Summary  - per (auart, vkorg, vtweg, date):
+*&                               order count, net value, and invoice
+*&                               count derived via VBRK->VBRP->VBAK
+*&
+*& Inputs
+*&   s_vkorg / s_vtweg / s_spart  - sales area selection
+*&   s_auart                       - order-type filter
+*&   s_erdat                       - date range (default sy-datum)
+*&   p_maxrec                      - VBAK row cap (default 5000)
+*&
+*& Tables read (READ-ONLY; no UPDATE / INSERT / MODIFY / DELETE /
+*& COMMIT against any database table — internal-table DELETE
+*& ADJACENT DUPLICATES is the only DELETE in the program):
+*&   Config:  TVAK, TVSPA, TVSPS, TVFK, TVCPF, T685A, VKOA, SKAT
+*&   Trans:   VBAK, VBRK, VBRP, NACH
+*&
+*& Output
+*&   Tabbed ALV display via cl_gui_docking_container +
+*&   cl_gui_tabstrip + cl_gui_alv_grid. No spool, no file output,
+*&   no remote calls.
+*&
+*& Compatibility
+*&   Requires SAP_BASIS 7.40 SP05 or higher (uses VALUE / COND /
+*&   inline DATA / strict Open SQL). Verified on 7.50 SP14.
 *&---------------------------------------------------------------------*
 REPORT zsd_config_review.
 
