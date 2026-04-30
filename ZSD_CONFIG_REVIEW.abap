@@ -208,7 +208,7 @@ FORM fetch_sd_order_types.
         lt_auart_cnt TYPE HASHED TABLE OF ty_auart_cnt
                      WITH UNIQUE KEY auart.
 
-  SELECT auart bezei autyp abstk faktyp prsfd
+  SELECT auart, bezei, autyp, abstk, faktyp, prsfd
     FROM tvak
     INTO CORRESPONDING FIELDS OF TABLE @lt_tvak.
 
@@ -261,7 +261,7 @@ FORM fetch_billing_types.
         lt_fkart_cnt TYPE HASHED TABLE OF ty_fkart_cnt
                      WITH UNIQUE KEY fkart.
 
-  SELECT fkart vtext fktyp sfakn rplkz
+  SELECT fkart, vtext, fktyp, sfakn, rplkz
     FROM tvfk
     INTO CORRESPONDING FIELDS OF TABLE @lt_tvfk.
 
@@ -289,7 +289,7 @@ ENDFORM.
 * Reads copy control rules from TVCPF
 *----------------------------------------------------------------------*
 FORM fetch_billing_copy_control.
-  SELECT kappl qualf qualz fotranst vbtyp_n
+  SELECT kappl, qualf, qualz, fotranst, vbtyp_n
     FROM tvcpf
     INTO TABLE @gt_bill_copy
     WHERE kappl = 'V1'.
@@ -305,7 +305,7 @@ ENDFORM.
 FORM fetch_nace_output.
   SELECT kappl, kschl, vkorg, vtweg, spart, nacha, tnam, COUNT(*) AS count
     FROM nach
-    WHERE kappl IN ('V1', 'V2', 'V3')
+    WHERE kappl IN ( 'V1', 'V2', 'V3' )
       AND vkorg IN @s_vkorg
       AND vtweg IN @s_vtweg
       AND spart IN @s_spart
@@ -320,10 +320,10 @@ ENDFORM.
 * Reads output condition type config from T685A
 *----------------------------------------------------------------------*
 FORM fetch_nace_access.
-  SELECT kappl kschl kozgf krech kbetr
+  SELECT kappl, kschl, kozgf, krech, kbetr
     FROM t685a
     INTO TABLE @gt_nace_access
-    WHERE kappl IN ('V1', 'V2', 'V3').
+    WHERE kappl IN ( 'V1', 'V2', 'V3' ).
 
   SORT gt_nace_access BY kappl kschl.
 ENDFORM.
@@ -343,7 +343,7 @@ FORM fetch_account_determination.
         lr_saknr TYPE RANGE OF skat-saknr,
         lt_skat  TYPE HASHED TABLE OF ty_skat_txt WITH UNIQUE KEY saknr.
 
-  SELECT kappl ktosl vkorg vtweg ktosg zterm konts konth
+  SELECT kappl, ktosl, vkorg, vtweg, ktosg, zterm, konts, konth
     FROM vkoa
     INTO CORRESPONDING FIELDS OF TABLE @lt_vkoa
     WHERE vkorg IN @s_vkorg
@@ -357,7 +357,7 @@ FORM fetch_account_determination.
   DELETE ADJACENT DUPLICATES FROM lr_saknr COMPARING low.
 
   IF lr_saknr IS NOT INITIAL.
-    SELECT saknr txt20
+    SELECT saknr, txt20
       FROM skat
       INTO TABLE @lt_skat
       WHERE spras = @sy-langu
@@ -390,18 +390,32 @@ ENDFORM.
 
 *----------------------------------------------------------------------*
 * FORM: FETCH_TRANSACTIONAL_SUMMARY
-* Summarizes orders and billing by doc type / sales area / period.
-* Billing is matched by vkorg/vtweg/fkdat — rows without a matching
-* order entry are skipped (by design; billing may pre-date order range).
+* Summarizes orders and billing by (auart, sales area, date).
+* Order side: aggregated from VBAK via COLLECT into a HASHED accumulator
+* — O(n) instead of the previous O(n^2) READ TABLE in a loop.
+* Billing side: counts derived by joining VBRK -> VBRP -> VBAK so that
+* each invoice is attributed to its source order's auart, then GROUP BY
+* on the database for a single row per (auart, vkorg, vtweg, fkdat) —
+* fixes the previous wrong match that ignored auart entirely.
 *----------------------------------------------------------------------*
 FORM fetch_transactional_summary.
-  DATA: lt_vbak TYPE TABLE OF vbak,
-        lt_vbrk TYPE TABLE OF vbrk.
+  TYPES: BEGIN OF ty_bill_cnt,
+           auart TYPE vbak-auart,
+           vkorg TYPE vbrk-vkorg,
+           vtweg TYPE vbrk-vtweg,
+           fkdat TYPE vbrk-fkdat,
+           cnt   TYPE i,
+         END OF ty_bill_cnt.
 
-  SELECT vbeln auart vkorg vtweg erdat netwr
+  DATA: lt_vbak     TYPE TABLE OF vbak,
+        lt_bill_cnt TYPE TABLE OF ty_bill_cnt,
+        lt_acc      TYPE HASHED TABLE OF ty_trans_summary
+                    WITH UNIQUE KEY auart vkorg vtweg erdat.
+
+  SELECT vbeln, auart, vkorg, vtweg, erdat, netwr
     FROM vbak
     INTO CORRESPONDING FIELDS OF TABLE @lt_vbak
-    UP TO p_maxrec ROWS
+    UP TO @p_maxrec ROWS
     WHERE vkorg IN @s_vkorg
       AND vtweg IN @s_vtweg
       AND spart IN @s_spart
@@ -409,50 +423,42 @@ FORM fetch_transactional_summary.
       AND erdat IN @s_erdat.
 
   LOOP AT lt_vbak INTO DATA(ls_vbak).
-    READ TABLE gt_trans_summary WITH KEY
-      auart = ls_vbak-auart
-      vkorg = ls_vbak-vkorg
-      vtweg = ls_vbak-vtweg
-      erdat = ls_vbak-erdat
-      TRANSPORTING NO FIELDS.
-
-    IF sy-subrc = 0.
-      DATA(lv_idx) = sy-tabix.
-      ADD 1 TO gt_trans_summary[ lv_idx ]-order_cnt.
-      ADD ls_vbak-netwr TO gt_trans_summary[ lv_idx ]-net_val.
-    ELSE.
-      APPEND VALUE ty_trans_summary(
-        auart     = ls_vbak-auart
-        vkorg     = ls_vbak-vkorg
-        vtweg     = ls_vbak-vtweg
-        erdat     = ls_vbak-erdat
-        order_cnt = 1
-        net_val   = ls_vbak-netwr
-      ) TO gt_trans_summary.
-    ENDIF.
+    COLLECT VALUE ty_trans_summary(
+      auart     = ls_vbak-auart
+      vkorg     = ls_vbak-vkorg
+      vtweg     = ls_vbak-vtweg
+      erdat     = ls_vbak-erdat
+      order_cnt = 1
+      net_val   = ls_vbak-netwr ) INTO lt_acc.
   ENDLOOP.
 
-  SELECT vbeln fkart vkorg vtweg fkdat
-    FROM vbrk
-    INTO CORRESPONDING FIELDS OF TABLE @lt_vbrk
-    UP TO p_maxrec ROWS
-    WHERE vkorg IN @s_vkorg
-      AND vtweg IN @s_vtweg
-      AND spart IN @s_spart
-      AND fkdat IN @s_erdat.
+  " Billings attributed to source order's auart via VBRP/VBAK
+  SELECT k~auart,
+         b~vkorg,
+         b~vtweg,
+         b~fkdat,
+         COUNT( DISTINCT b~vbeln ) AS cnt
+    FROM vbrk AS b
+    INNER JOIN vbrp AS p ON p~vbeln = b~vbeln
+    INNER JOIN vbak AS k ON k~vbeln = p~aubel
+    INTO TABLE @lt_bill_cnt
+    WHERE b~vkorg IN @s_vkorg
+      AND b~vtweg IN @s_vtweg
+      AND b~spart IN @s_spart
+      AND b~fkdat IN @s_erdat
+      AND k~auart IN @s_auart
+    GROUP BY k~auart, b~vkorg, b~vtweg, b~fkdat.
 
-  LOOP AT lt_vbrk INTO DATA(ls_vbrk).
-    READ TABLE gt_trans_summary WITH KEY
-      vkorg = ls_vbrk-vkorg
-      vtweg = ls_vbrk-vtweg
-      erdat = ls_vbrk-fkdat
-      TRANSPORTING NO FIELDS.
-
-    IF sy-subrc = 0.
-      ADD 1 TO gt_trans_summary[ sy-tabix ]-bill_cnt.
-    ENDIF.
+  LOOP AT lt_bill_cnt INTO DATA(ls_bc).
+    COLLECT VALUE ty_trans_summary(
+      auart    = ls_bc-auart
+      vkorg    = ls_bc-vkorg
+      vtweg    = ls_bc-vtweg
+      erdat    = ls_bc-fkdat
+      bill_cnt = ls_bc-cnt ) INTO lt_acc.
   ENDLOOP.
 
+  gt_trans_summary = lt_acc.
   SORT gt_trans_summary BY vkorg vtweg erdat DESCENDING.
 ENDFORM.
 
