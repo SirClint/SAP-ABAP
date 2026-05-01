@@ -166,6 +166,10 @@ AT SELECTION-SCREEN.
   IF p_maxrec <= 0.
     MESSAGE e398(00) WITH 'Max records must be greater than zero'.
   ENDIF.
+  IF s_erdat[] IS INITIAL AND
+     ( r_bil = abap_true OR r_trn = abap_true OR r_flw = abap_true ).
+    MESSAGE w398(00) WITH 'No date range — this view may run long on large systems'.
+  ENDIF.
 
 *----------------------------------------------------------------------*
 * START OF SELECTION
@@ -388,13 +392,14 @@ FORM fetch_transactional_summary.
     FROM vbrk AS b
     INNER JOIN vbrp AS p ON p~vbeln = b~vbeln
     INNER JOIN vbak AS k ON k~vbeln = p~aubel
-    INTO TABLE @lt_bill_cnt
     WHERE b~vkorg IN @s_vkorg
       AND b~vtweg IN @s_vtweg
       AND b~spart IN @s_spart
       AND b~fkdat IN @s_erdat
       AND k~auart IN @s_auart
-    GROUP BY k~auart, b~vkorg, b~vtweg, b~fkdat.
+    GROUP BY k~auart, b~vkorg, b~vtweg, b~fkdat
+    UP TO @p_maxrec ROWS
+    INTO TABLE @lt_bill_cnt.
 
   LOOP AT lt_bill_cnt INTO DATA(ls_bc).
     COLLECT VALUE ty_trans_summary(
@@ -438,6 +443,7 @@ FORM fetch_doc_flow.
       AND k~auart IN @s_auart
       AND b~fkdat IN @s_erdat
     GROUP BY k~auart, b~fkart
+    UP TO @p_maxrec ROWS
     INTO TABLE @lt_raw.
 
   IF lt_raw IS INITIAL.
