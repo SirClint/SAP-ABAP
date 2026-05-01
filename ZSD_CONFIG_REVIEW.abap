@@ -220,8 +220,8 @@ FORM fetch_item_categories.
     LEFT OUTER JOIN tvapt AS b
       ON b~pstyv = a~pstyv
      AND b~spras = @sy-langu
-    INTO TABLE @gt_item_cat
-    WHERE a~auart IN @s_auart.
+    WHERE a~auart IN @s_auart
+    INTO TABLE @gt_item_cat.
 
   SORT gt_item_cat BY auart pstyv.
 ENDFORM.
@@ -289,8 +289,8 @@ ENDFORM.
 FORM fetch_nace_access.
   SELECT DISTINCT kappl, kschl
     FROM t685a
-    INTO TABLE @gt_nace_access
-    WHERE kappl IN ( 'V1', 'V2', 'V3' ).
+    WHERE kappl IN ( 'V1', 'V2', 'V3' )
+    INTO TABLE @gt_nace_access.
 
   SORT gt_nace_access BY kappl kschl.
 ENDFORM.
@@ -321,13 +321,13 @@ FORM fetch_transactional_summary.
 
   SELECT vbeln, auart, vkorg, vtweg, erdat, netwr
     FROM vbak
-    INTO CORRESPONDING FIELDS OF TABLE @lt_vbak
-    UP TO @p_maxrec ROWS
     WHERE vkorg IN @s_vkorg
       AND vtweg IN @s_vtweg
       AND spart IN @s_spart
       AND auart IN @s_auart
-      AND erdat IN @s_erdat.
+      AND erdat IN @s_erdat
+    UP TO @p_maxrec ROWS
+    INTO CORRESPONDING FIELDS OF TABLE @lt_vbak.
 
   LOOP AT lt_vbak INTO DATA(ls_vbak).
     COLLECT VALUE ty_trans_summary(
