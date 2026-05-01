@@ -212,16 +212,41 @@ ENDFORM.
 
 *----------------------------------------------------------------------*
 * FORM: FETCH_ITEM_CATEGORIES
-* Reads item category config using a JOIN — eliminates SELECT in loop.
+* T184 is a pooled table — JOINs not supported on ECC.
+* Two separate SELECTs merged in ABAP: T184 for determination entries,
+* TVAPT for language-dependent descriptions.
 *----------------------------------------------------------------------*
 FORM fetch_item_categories.
-  SELECT DISTINCT a~auart, a~pstyv, b~vtext
-    FROM t184 AS a
-    LEFT OUTER JOIN tvapt AS b
-      ON b~pstyv = a~pstyv
-     AND b~spras = @sy-langu
-    WHERE a~auart IN @s_auart
-    INTO TABLE @gt_item_cat.
+  TYPES: BEGIN OF ty_tvapt,
+           pstyv TYPE pstyv,
+           vtext TYPE text30,
+         END OF ty_tvapt.
+
+  DATA lt_tvapt TYPE HASHED TABLE OF ty_tvapt WITH UNIQUE KEY pstyv.
+
+  SELECT DISTINCT auart, pstyv
+    FROM t184
+    WHERE auart IN @s_auart
+    INTO TABLE @DATA(lt_t184).
+
+  IF lt_t184 IS NOT INITIAL.
+    SELECT pstyv, vtext
+      FROM tvapt
+      WHERE spras = @sy-langu
+      INTO TABLE @lt_tvapt.
+  ENDIF.
+
+  LOOP AT lt_t184 INTO DATA(ls_t184).
+    DATA(ls_item) = VALUE ty_item_cat(
+      auart = ls_t184-auart
+      pstyv = ls_t184-pstyv ).
+    READ TABLE lt_tvapt WITH TABLE KEY pstyv = ls_t184-pstyv
+      INTO DATA(ls_tv).
+    IF sy-subrc = 0.
+      ls_item-vtext = ls_tv-vtext.
+    ENDIF.
+    APPEND ls_item TO gt_item_cat.
+  ENDLOOP.
 
   SORT gt_item_cat BY auart pstyv.
 ENDFORM.
