@@ -23,6 +23,9 @@
 *&   6. Transactional Summary  - per (auart, vkorg, vtweg, date):
 *&                               order count, net value, and invoice
 *&                               count derived via VBRK->VBRP->VBAK
+*&   7. Document Flow          - which AUART values have produced which
+*&                               FKART values; count of distinct billing
+*&                               documents per pair (VBRK->VBRP->VBAK)
 *&
 *& Inputs
 *&   s_vkorg / s_vtweg / s_spart  - sales area selection
@@ -100,7 +103,16 @@ TYPES:
     order_cnt TYPE i,
     bill_cnt  TYPE i,
     net_val   TYPE netwr,
-  END OF ty_trans_summary.
+  END OF ty_trans_summary,
+
+  " --- Document Flow ---
+  BEGIN OF ty_doc_flow,
+    auart     TYPE auart,
+    auart_txt TYPE text30,
+    fkart     TYPE fkart,
+    fkart_txt TYPE text30,
+    bill_cnt  TYPE i,
+  END OF ty_doc_flow.
 
 *----------------------------------------------------------------------*
 * INTERNAL TABLES
@@ -111,7 +123,8 @@ DATA:
   gt_bill_types    TYPE TABLE OF ty_bill_types,
   gt_output        TYPE TABLE OF ty_output,
   gt_nace_access   TYPE TABLE OF ty_nace_access,
-  gt_trans_summary TYPE TABLE OF ty_trans_summary.
+  gt_trans_summary TYPE TABLE OF ty_trans_summary,
+  gt_doc_flow      TYPE TABLE OF ty_doc_flow.
 
 *----------------------------------------------------------------------*
 * SELECTION SCREEN
@@ -134,7 +147,8 @@ SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
               r_bil  RADIOBUTTON GROUP r1,
               r_out  RADIOBUTTON GROUP r1,
               r_t685 RADIOBUTTON GROUP r1,
-              r_trn  RADIOBUTTON GROUP r1.
+              r_trn  RADIOBUTTON GROUP r1,
+              r_flw  RADIOBUTTON GROUP r1.
 SELECTION-SCREEN END OF BLOCK b3.
 
 *----------------------------------------------------------------------*
@@ -164,6 +178,7 @@ START-OF-SELECTION.
     WHEN r_out.  PERFORM fetch_nace_output.
     WHEN r_t685. PERFORM fetch_nace_access.
     WHEN r_trn.  PERFORM fetch_transactional_summary.
+    WHEN r_flw.  PERFORM fetch_doc_flow.
   ENDCASE.
 
 END-OF-SELECTION.
@@ -395,6 +410,71 @@ FORM fetch_transactional_summary.
 ENDFORM.
 
 *----------------------------------------------------------------------*
+* FORM: FETCH_DOC_FLOW
+* Shows which order types (AUART) have produced which billing types
+* (FKART) within the selected period and sales area.
+* TVCPF (copy control config) is not present on this system; the flow
+* is derived from VBRK -> VBRP -> VBAK using VBRP-AUBEL as the link
+* back to the originating sales order.
+*----------------------------------------------------------------------*
+FORM fetch_doc_flow.
+  TYPES: BEGIN OF ty_flow_raw,
+           auart TYPE auart,
+           fkart TYPE fkart,
+           cnt   TYPE i,
+         END OF ty_flow_raw.
+
+  DATA: lt_raw       TYPE TABLE OF ty_flow_raw,
+        lt_auart_txt TYPE HASHED TABLE OF ty_vbak_types WITH UNIQUE KEY auart,
+        lt_fkart_txt TYPE HASHED TABLE OF ty_bill_types WITH UNIQUE KEY fkart.
+
+  SELECT k~auart, b~fkart, COUNT( DISTINCT b~vbeln ) AS cnt
+    FROM vbrk AS b
+    INNER JOIN vbrp AS p ON p~vbeln = b~vbeln
+    INNER JOIN vbak AS k ON k~vbeln = p~aubel
+    WHERE b~vkorg IN @s_vkorg
+      AND b~vtweg IN @s_vtweg
+      AND b~spart IN @s_spart
+      AND k~auart IN @s_auart
+      AND b~fkdat IN @s_erdat
+    GROUP BY k~auart, b~fkart
+    INTO TABLE @lt_raw.
+
+  IF lt_raw IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  SELECT auart, bezei
+    FROM tvakt
+    WHERE spras = @sy-langu
+    INTO CORRESPONDING FIELDS OF TABLE @lt_auart_txt.
+
+  SELECT fkart, vtext
+    FROM tvfkt
+    WHERE spras = @sy-langu
+    INTO CORRESPONDING FIELDS OF TABLE @lt_fkart_txt.
+
+  LOOP AT lt_raw INTO DATA(ls_raw).
+    DATA(ls_flow) = VALUE ty_doc_flow(
+      auart    = ls_raw-auart
+      fkart    = ls_raw-fkart
+      bill_cnt = ls_raw-cnt ).
+
+    READ TABLE lt_auart_txt WITH TABLE KEY auart = ls_raw-auart
+      INTO DATA(ls_at).
+    IF sy-subrc = 0. ls_flow-auart_txt = ls_at-bezei. ENDIF.
+
+    READ TABLE lt_fkart_txt WITH TABLE KEY fkart = ls_raw-fkart
+      INTO DATA(ls_ft).
+    IF sy-subrc = 0. ls_flow-fkart_txt = ls_ft-vtext. ENDIF.
+
+    APPEND ls_flow TO gt_doc_flow.
+  ENDLOOP.
+
+  SORT gt_doc_flow BY auart fkart.
+ENDFORM.
+
+*----------------------------------------------------------------------*
 * FORM: DISPLAY_ALV
 * Displays the data table that matches the selected radio button using
 * CL_SALV_TABLE (object-oriented ALV). Auto-builds the field catalog
@@ -442,6 +522,12 @@ FORM display_alv.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_trans_summary ).
+
+        WHEN r_flw.
+          lv_title = 'Document Flow: Order Type to Billing Type'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_doc_flow ).
       ENDCASE.
 
       lo_alv->get_display_settings( )->set_list_header( lv_title ).
