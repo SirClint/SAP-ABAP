@@ -330,17 +330,29 @@ ENDFORM.
 * replaces the previous loop-based accumulation.
 *----------------------------------------------------------------------*
 FORM fetch_nace_output.
-  SELECT kappl, kschl, COUNT(*) AS count
+  TYPES: BEGIN OF ty_nach_raw,
+           kappl TYPE kappl,
+           kschl TYPE kschl,
+           cnt   TYPE i,
+         END OF ty_nach_raw.
+
+  DATA lt_raw TYPE TABLE OF ty_nach_raw.
+
+  SELECT kappl, kschl, COUNT(*) AS cnt
     FROM nach
     WHERE kappl IN ( 'V1', 'V2', 'V3' )
     GROUP BY kappl, kschl
-    INTO CORRESPONDING FIELDS OF TABLE @gt_output.
+    INTO TABLE @lt_raw.
 
-  LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_out>).
-    <ls_out>-appl_txt = SWITCH #( <ls_out>-kappl
-      WHEN 'V1' THEN 'Sales'
-      WHEN 'V2' THEN 'Shipping'
-      WHEN 'V3' THEN 'Billing' ).
+  LOOP AT lt_raw INTO DATA(ls_raw).
+    APPEND VALUE ty_output(
+      kappl    = ls_raw-kappl
+      kschl    = ls_raw-kschl
+      count    = ls_raw-cnt
+      appl_txt = SWITCH #( ls_raw-kappl
+        WHEN 'V1' THEN 'Sales'
+        WHEN 'V2' THEN 'Shipping'
+        WHEN 'V3' THEN 'Billing' ) ) TO gt_output.
   ENDLOOP.
 
   SORT gt_output BY kappl kschl count DESCENDING.
