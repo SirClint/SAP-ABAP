@@ -226,15 +226,15 @@ FORM fetch_item_categories.
            pstyv TYPE pstyv,
            vtext TYPE text30,
          END OF ty_tvapt,
-         BEGIN OF ty_vbap_cnt,
+         BEGIN OF ty_auart_cnt,
            auart TYPE auart,
-           pstyv TYPE pstyv,
            cnt   TYPE i,
-         END OF ty_vbap_cnt.
+         END OF ty_auart_cnt.
 
-  DATA: lt_tvapt    TYPE HASHED TABLE OF ty_tvapt    WITH UNIQUE KEY pstyv,
-        lt_vbap_cnt TYPE HASHED TABLE OF ty_vbap_cnt WITH UNIQUE KEY auart pstyv.
+  DATA: lt_tvapt     TYPE HASHED TABLE OF ty_tvapt     WITH UNIQUE KEY pstyv,
+        lt_auart_cnt TYPE HASHED TABLE OF ty_auart_cnt WITH UNIQUE KEY auart.
 
+  " T184 is pooled — small config table, fast
   SELECT auart, pstyv
     FROM t184
     WHERE auart IN @s_auart
@@ -252,27 +252,28 @@ FORM fetch_item_categories.
     WHERE spras = @sy-langu
     INTO TABLE @lt_tvapt.
 
-  SELECT k~auart, p~pstyv, COUNT(*) AS cnt
-    FROM vbap AS p
-    INNER JOIN vbak AS k ON k~vbeln = p~vbeln
-    WHERE k~vkorg IN @s_vkorg
-      AND k~vtweg IN @s_vtweg
-      AND k~spart IN @s_spart
-      AND k~auart IN @s_auart
-    GROUP BY k~auart, p~pstyv
-    INTO TABLE @lt_vbap_cnt.
+  " Count orders per auart via VBAK only — VKORG index keeps this fast.
+  " Avoids joining VBAP (no index on PSTYV, full scan on large table).
+  " COUNT field shows orders of that type, not item-level occurrences.
+  SELECT auart, COUNT(*) AS cnt
+    FROM vbak
+    WHERE vkorg IN @s_vkorg
+      AND vtweg IN @s_vtweg
+      AND spart IN @s_spart
+      AND auart IN @s_auart
+    GROUP BY auart
+    INTO TABLE @lt_auart_cnt.
 
   LOOP AT lt_t184 INTO DATA(ls_t184).
-    READ TABLE lt_vbap_cnt WITH TABLE KEY auart = ls_t184-auart
-                                          pstyv = ls_t184-pstyv
-      INTO DATA(ls_vc).
-    IF sy-subrc <> 0 OR ls_vc-cnt = 0.
+    READ TABLE lt_auart_cnt WITH TABLE KEY auart = ls_t184-auart
+      INTO DATA(ls_cnt).
+    IF sy-subrc <> 0 OR ls_cnt-cnt = 0.
       CONTINUE.
     ENDIF.
     DATA(ls_item) = VALUE ty_item_cat(
       auart = ls_t184-auart
       pstyv = ls_t184-pstyv
-      count = ls_vc-cnt ).
+      count = ls_cnt-cnt ).
     READ TABLE lt_tvapt WITH TABLE KEY pstyv = ls_t184-pstyv
       INTO DATA(ls_tv).
     IF sy-subrc = 0.
