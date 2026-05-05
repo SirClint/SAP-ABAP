@@ -19,24 +19,25 @@
 *&                               VBRK invoices per billing type
 *&   4. Output Records         - NACH condition records (V1/V2/V3),
 *&                               counts grouped by KAPPL + KSCHL
-*&   5. Output Cond Types      - T685A condition type config (V1/V2/V3)
-*&   6. Transactional Summary  - per (auart, vkorg, vtweg, date):
-*&                               order count, net value, and invoice
-*&                               count derived via VBRK->VBRP->VBAK
-*&   7. Document Flow          - which AUART values have produced which
-*&                               FKART values; count of distinct billing
-*&                               documents per pair (VBRK->VBRP->VBAK)
+*&   5. Output Cond Types      - Distinct output types from NACH
+*&                               (V1/V2/V3) with application label
+*&   6. Transactional Summary  - Order count and net value by
+*&                               (auart, vkorg, vtweg, erdat) from
+*&                               VBAK GROUP BY — no joins
+*&   7. Billing Volume         - Billing doc count by billing type
+*&                               and sales area from VBRK GROUP BY
+*&                               — no VBRP/VBAK join
 *&
 *& Inputs
 *&   s_vkorg / s_vtweg / s_spart  - sales area selection
 *&   s_auart                       - order-type filter
-*&   s_erdat                       - date range (default sy-datum)
+*&   s_erdat                       - date range (default: last 365 days)
 *&
 *& Tables read (READ-ONLY; no UPDATE / INSERT / MODIFY / DELETE /
 *& COMMIT against any database table — internal-table DELETE
 *& ADJACENT DUPLICATES is the only DELETE in the program):
-*&   Config:  TVAK, TVAKT, T184, TVAPT, TVFK, TVFKT, T685A
-*&   Trans:   VBAK, VBRK, VBRP, NACH
+*&   Config:  TVAK, TVAKT, T184, TVAPT, TVFK, TVFKT
+*&   Trans:   VBAK, VBRK, NACH
 *&
 *& Output
 *&   Object-oriented ALV display via CL_SALV_TABLE. The selection
@@ -90,8 +91,9 @@ TYPES:
   END OF ty_output,
 
   BEGIN OF ty_nace_access,
-    kappl     TYPE kappl,
-    kschl     TYPE kschl,
+    kappl    TYPE kappl,
+    appl_txt TYPE c LENGTH 20,
+    kschl    TYPE kschl,
   END OF ty_nace_access,
 
   " --- Transactional Summary ---
@@ -101,16 +103,15 @@ TYPES:
     vtweg     TYPE vtweg,
     erdat     TYPE erdat,
     order_cnt TYPE i,
-    bill_cnt  TYPE i,
     net_val   TYPE netwr,
   END OF ty_trans_summary,
 
-  " --- Document Flow ---
+  " --- Billing Volume ---
   BEGIN OF ty_doc_flow,
-    auart     TYPE auart,
-    auart_txt TYPE text30,
     fkart     TYPE fkart,
     fkart_txt TYPE text30,
+    vkorg     TYPE vkorg,
+    vtweg     TYPE vtweg,
     bill_cnt  TYPE i,
   END OF ty_doc_flow.
 
@@ -369,152 +370,106 @@ ENDFORM.
 
 *----------------------------------------------------------------------*
 * FORM: FETCH_NACE_ACCESS
-* Reads output condition type config from T685A
+* Distinct output condition types from NACH with application label.
+* Complements r_output (which shows counts per type); this shows
+* which types are configured at a glance, sorted config-style.
 *----------------------------------------------------------------------*
 FORM fetch_nace_access.
+  TYPES: BEGIN OF ty_nach_keys,
+           kappl TYPE kappl,
+           kschl TYPE kschl,
+         END OF ty_nach_keys.
+
+  DATA lt_keys TYPE TABLE OF ty_nach_keys.
+
   SELECT DISTINCT kappl, kschl
-    FROM t685
-    INTO TABLE @gt_nace_access.
+    FROM nach
+    WHERE kappl IN ( 'V1', 'V2', 'V3' )
+    INTO TABLE @lt_keys.
+
+  LOOP AT lt_keys INTO DATA(ls_key).
+    APPEND VALUE ty_nace_access(
+      kappl    = ls_key-kappl
+      kschl    = ls_key-kschl
+      appl_txt = SWITCH #( ls_key-kappl
+        WHEN 'V1' THEN 'Sales'
+        WHEN 'V2' THEN 'Shipping'
+        WHEN 'V3' THEN 'Billing' ) ) TO gt_nace_access.
+  ENDLOOP.
 
   SORT gt_nace_access BY kappl kschl.
 ENDFORM.
 
 *----------------------------------------------------------------------*
 * FORM: FETCH_TRANSACTIONAL_SUMMARY
-* Summarizes orders and billing by (auart, sales area, date).
-* Order side: aggregated from VBAK via COLLECT into a HASHED accumulator
-* — O(n) instead of the previous O(n^2) READ TABLE in a loop.
-* Billing side: counts derived by joining VBRK -> VBRP -> VBAK so that
-* each invoice is attributed to its source order's auart, then GROUP BY
-* on the database for a single row per (auart, vkorg, vtweg, fkdat) —
-* fixes the previous wrong match that ignored auart entirely.
+* Order volume by order type, sales area, and creation date.
+* Pure VBAK GROUP BY — no joins, uses VKORG index, fast on any
+* data volume. Bill_cnt removed; see r_dflow for billing side.
 *----------------------------------------------------------------------*
 FORM fetch_transactional_summary.
-  TYPES: BEGIN OF ty_bill_cnt,
-           auart TYPE auart,
-           vkorg TYPE vkorg,
-           vtweg TYPE vtweg,
-           fkdat TYPE fkdat,
-           cnt   TYPE i,
-         END OF ty_bill_cnt.
-
-  DATA: lt_vbak     TYPE TABLE OF vbak,
-        lt_bill_cnt TYPE TABLE OF ty_bill_cnt,
-        lt_acc      TYPE HASHED TABLE OF ty_trans_summary
-                    WITH UNIQUE KEY auart vkorg vtweg erdat.
-
-  SELECT vbeln, auart, vkorg, vtweg, erdat, netwr
+  SELECT auart, vkorg, vtweg, erdat,
+         COUNT(*) AS order_cnt,
+         SUM( netwr ) AS net_val
     FROM vbak
     WHERE vkorg IN @s_vkorg
       AND vtweg IN @s_vtweg
       AND spart IN @s_spart
       AND auart IN @s_auart
       AND erdat IN @s_erdat
-    INTO CORRESPONDING FIELDS OF TABLE @lt_vbak.
+    GROUP BY auart, vkorg, vtweg, erdat
+    INTO CORRESPONDING FIELDS OF TABLE @gt_trans_summary.
 
-  LOOP AT lt_vbak INTO DATA(ls_vbak).
-    COLLECT VALUE ty_trans_summary(
-      auart     = ls_vbak-auart
-      vkorg     = ls_vbak-vkorg
-      vtweg     = ls_vbak-vtweg
-      erdat     = ls_vbak-erdat
-      order_cnt = 1
-      net_val   = ls_vbak-netwr ) INTO lt_acc.
-  ENDLOOP.
-
-  " Billings attributed to source order's auart via VBRP/VBAK
-  SELECT k~auart,
-         b~vkorg,
-         b~vtweg,
-         b~fkdat,
-         COUNT( DISTINCT b~vbeln ) AS cnt
-    FROM vbrk AS b
-    INNER JOIN vbrp AS p ON p~vbeln = b~vbeln
-    INNER JOIN vbak AS k ON k~vbeln = p~aubel
-    WHERE b~vkorg IN @s_vkorg
-      AND b~vtweg IN @s_vtweg
-      AND b~spart IN @s_spart
-      AND b~fkdat IN @s_erdat
-      AND k~auart IN @s_auart
-    GROUP BY k~auart, b~vkorg, b~vtweg, b~fkdat
-    INTO TABLE @lt_bill_cnt.
-
-  LOOP AT lt_bill_cnt INTO DATA(ls_bc).
-    COLLECT VALUE ty_trans_summary(
-      auart    = ls_bc-auart
-      vkorg    = ls_bc-vkorg
-      vtweg    = ls_bc-vtweg
-      erdat    = ls_bc-fkdat
-      bill_cnt = ls_bc-cnt ) INTO lt_acc.
-  ENDLOOP.
-
-  gt_trans_summary = lt_acc.
   SORT gt_trans_summary BY vkorg vtweg erdat DESCENDING.
 ENDFORM.
 
 *----------------------------------------------------------------------*
 * FORM: FETCH_DOC_FLOW
-* Shows which order types (AUART) have produced which billing types
-* (FKART) within the selected period and sales area.
-* TVCPF (copy control config) is not present on this system; the flow
-* is derived from VBRK -> VBRP -> VBAK using VBRP-AUBEL as the link
-* back to the originating sales order.
+* Billing volume by billing type and sales area.
+* Pure VBRK GROUP BY + TVFKT description lookup — no VBRP/VBAK join,
+* uses VKORG index, returns quickly on any data volume.
 *----------------------------------------------------------------------*
 FORM fetch_doc_flow.
-  TYPES: BEGIN OF ty_flow_raw,
-           auart TYPE auart,
+  TYPES: BEGIN OF ty_fkart_cnt,
            fkart TYPE fkart,
+           vkorg TYPE vkorg,
+           vtweg TYPE vtweg,
            cnt   TYPE i,
-         END OF ty_flow_raw.
+         END OF ty_fkart_cnt.
 
-  DATA: lt_raw       TYPE TABLE OF ty_flow_raw,
-        lt_auart_txt TYPE HASHED TABLE OF ty_vbak_types WITH UNIQUE KEY auart,
-        lt_fkart_txt TYPE HASHED TABLE OF ty_bill_types WITH UNIQUE KEY fkart.
+  DATA: lt_raw   TYPE TABLE OF ty_fkart_cnt,
+        lt_tvfkt TYPE HASHED TABLE OF ty_bill_types WITH UNIQUE KEY fkart.
 
-  SELECT k~auart, b~fkart, COUNT( DISTINCT b~vbeln ) AS cnt
-    FROM vbrk AS b
-    INNER JOIN vbrp AS p ON p~vbeln = b~vbeln
-    INNER JOIN vbak AS k ON k~vbeln = p~aubel
-    WHERE b~vkorg IN @s_vkorg
-      AND b~vtweg IN @s_vtweg
-      AND b~spart IN @s_spart
-      AND k~auart IN @s_auart
-      AND b~fkdat IN @s_erdat
-    GROUP BY k~auart, b~fkart
+  SELECT fkart, vkorg, vtweg, COUNT(*) AS cnt
+    FROM vbrk
+    WHERE vkorg IN @s_vkorg
+      AND vtweg IN @s_vtweg
+      AND spart IN @s_spart
+      AND fkdat IN @s_erdat
+    GROUP BY fkart, vkorg, vtweg
     INTO TABLE @lt_raw.
 
   IF lt_raw IS INITIAL.
     RETURN.
   ENDIF.
 
-  SELECT auart, bezei
-    FROM tvakt
-    WHERE spras = @sy-langu
-    INTO CORRESPONDING FIELDS OF TABLE @lt_auart_txt.
-
   SELECT fkart, vtext
     FROM tvfkt
     WHERE spras = @sy-langu
-    INTO CORRESPONDING FIELDS OF TABLE @lt_fkart_txt.
+    INTO CORRESPONDING FIELDS OF TABLE @lt_tvfkt.
 
   LOOP AT lt_raw INTO DATA(ls_raw).
     DATA(ls_flow) = VALUE ty_doc_flow(
-      auart    = ls_raw-auart
       fkart    = ls_raw-fkart
+      vkorg    = ls_raw-vkorg
+      vtweg    = ls_raw-vtweg
       bill_cnt = ls_raw-cnt ).
-
-    READ TABLE lt_auart_txt WITH TABLE KEY auart = ls_raw-auart
-      INTO DATA(ls_at).
-    IF sy-subrc = 0. ls_flow-auart_txt = ls_at-bezei. ENDIF.
-
-    READ TABLE lt_fkart_txt WITH TABLE KEY fkart = ls_raw-fkart
+    READ TABLE lt_tvfkt WITH TABLE KEY fkart = ls_raw-fkart
       INTO DATA(ls_ft).
     IF sy-subrc = 0. ls_flow-fkart_txt = ls_ft-vtext. ENDIF.
-
     APPEND ls_flow TO gt_doc_flow.
   ENDLOOP.
 
-  SORT gt_doc_flow BY auart fkart.
+  SORT gt_doc_flow BY fkart vkorg vtweg.
 ENDFORM.
 
 *----------------------------------------------------------------------*
@@ -567,7 +522,7 @@ FORM display_alv.
             CHANGING  t_table      = gt_trans_summary ).
 
         WHEN r_dflow.
-          lv_title = 'Document Flow: Order Type to Billing Type'.
+          lv_title = 'Billing Volume by Type and Sales Area'.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_doc_flow ).
