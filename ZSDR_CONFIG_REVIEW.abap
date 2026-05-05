@@ -72,6 +72,7 @@ TYPES:
     auart     TYPE auart,
     pstyv     TYPE pstyv,
     vtext     TYPE text30,
+    count     TYPE i,
   END OF ty_item_cat,
 
   " --- Billing Config ---
@@ -84,6 +85,7 @@ TYPES:
   " --- Output / NACE ---
   BEGIN OF ty_output,
     kappl     TYPE kappl,
+    appl_txt  TYPE c LENGTH 20,
     kschl     TYPE kschl,
     count     TYPE i,
   END OF ty_output,
@@ -223,9 +225,15 @@ FORM fetch_item_categories.
   TYPES: BEGIN OF ty_tvapt,
            pstyv TYPE pstyv,
            vtext TYPE text30,
-         END OF ty_tvapt.
+         END OF ty_tvapt,
+         BEGIN OF ty_vbap_cnt,
+           auart TYPE auart,
+           pstyv TYPE pstyv,
+           cnt   TYPE i,
+         END OF ty_vbap_cnt.
 
-  DATA lt_tvapt TYPE HASHED TABLE OF ty_tvapt WITH UNIQUE KEY pstyv.
+  DATA: lt_tvapt    TYPE HASHED TABLE OF ty_tvapt    WITH UNIQUE KEY pstyv,
+        lt_vbap_cnt TYPE HASHED TABLE OF ty_vbap_cnt WITH UNIQUE KEY auart pstyv.
 
   SELECT auart, pstyv
     FROM t184
@@ -235,17 +243,36 @@ FORM fetch_item_categories.
   SORT lt_t184 BY auart pstyv.
   DELETE ADJACENT DUPLICATES FROM lt_t184 COMPARING auart pstyv.
 
-  IF lt_t184 IS NOT INITIAL.
-    SELECT pstyv, vtext
-      FROM tvapt
-      WHERE spras = @sy-langu
-      INTO TABLE @lt_tvapt.
+  IF lt_t184 IS INITIAL.
+    RETURN.
   ENDIF.
 
+  SELECT pstyv, vtext
+    FROM tvapt
+    WHERE spras = @sy-langu
+    INTO TABLE @lt_tvapt.
+
+  SELECT k~auart, p~pstyv, COUNT(*) AS cnt
+    FROM vbap AS p
+    INNER JOIN vbak AS k ON k~vbeln = p~vbeln
+    WHERE k~vkorg IN @s_vkorg
+      AND k~vtweg IN @s_vtweg
+      AND k~spart IN @s_spart
+      AND k~auart IN @s_auart
+    GROUP BY k~auart, p~pstyv
+    INTO TABLE @lt_vbap_cnt.
+
   LOOP AT lt_t184 INTO DATA(ls_t184).
+    READ TABLE lt_vbap_cnt WITH TABLE KEY auart = ls_t184-auart
+                                          pstyv = ls_t184-pstyv
+      INTO DATA(ls_vc).
+    IF sy-subrc <> 0 OR ls_vc-cnt = 0.
+      CONTINUE.
+    ENDIF.
     DATA(ls_item) = VALUE ty_item_cat(
       auart = ls_t184-auart
-      pstyv = ls_t184-pstyv ).
+      pstyv = ls_t184-pstyv
+      count = ls_vc-cnt ).
     READ TABLE lt_tvapt WITH TABLE KEY pstyv = ls_t184-pstyv
       INTO DATA(ls_tv).
     IF sy-subrc = 0.
@@ -284,7 +311,6 @@ FORM fetch_billing_types.
     WHERE vkorg IN @s_vkorg
       AND vtweg IN @s_vtweg
       AND spart IN @s_spart
-      AND fkdat IN @s_erdat
     GROUP BY fkart
     INTO TABLE @lt_fkart_cnt.
 
@@ -309,6 +335,13 @@ FORM fetch_nace_output.
     WHERE kappl IN ( 'V1', 'V2', 'V3' )
     GROUP BY kappl, kschl
     INTO TABLE @gt_output.
+
+  LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_out>).
+    <ls_out>-appl_txt = SWITCH #( <ls_out>-kappl
+      WHEN 'V1' THEN 'Sales'
+      WHEN 'V2' THEN 'Shipping'
+      WHEN 'V3' THEN 'Billing' ).
+  ENDLOOP.
 
   SORT gt_output BY kappl kschl count DESCENDING.
 ENDFORM.
