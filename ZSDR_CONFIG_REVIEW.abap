@@ -31,7 +31,6 @@
 *&   s_vkorg / s_vtweg / s_spart  - sales area selection
 *&   s_auart                       - order-type filter
 *&   s_erdat                       - date range (default sy-datum)
-*&   p_maxrec                      - VBAK row cap (default 5000)
 *&
 *& Tables read (READ-ONLY; no UPDATE / INSERT / MODIFY / DELETE /
 *& COMMIT against any database table — internal-table DELETE
@@ -137,9 +136,6 @@ SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
                   s_erdat FOR vbak-erdat DEFAULT sy-datum.
 SELECTION-SCREEN END OF BLOCK b1.
 
-SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
-  PARAMETERS: p_maxrec TYPE i DEFAULT 5000 OBLIGATORY.
-SELECTION-SCREEN END OF BLOCK b2.
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
   PARAMETERS: r_ord  RADIOBUTTON GROUP r1 DEFAULT 'X',
@@ -155,9 +151,6 @@ SELECTION-SCREEN END OF BLOCK b3.
 * SELECTION SCREEN VALIDATION
 *----------------------------------------------------------------------*
 AT SELECTION-SCREEN.
-  IF p_maxrec <= 0.
-    MESSAGE e398(00) WITH 'Max records must be greater than zero'.
-  ENDIF.
   IF s_erdat[] IS INITIAL AND
      ( r_bil = abap_true OR r_trn = abap_true OR r_flw = abap_true ).
     MESSAGE w398(00) WITH 'No date range — this view may run long on large systems'.
@@ -365,7 +358,6 @@ FORM fetch_transactional_summary.
       AND spart IN @s_spart
       AND auart IN @s_auart
       AND erdat IN @s_erdat
-    UP TO @p_maxrec ROWS
     INTO CORRESPONDING FIELDS OF TABLE @lt_vbak.
 
   LOOP AT lt_vbak INTO DATA(ls_vbak).
@@ -393,7 +385,6 @@ FORM fetch_transactional_summary.
       AND b~fkdat IN @s_erdat
       AND k~auart IN @s_auart
     GROUP BY k~auart, b~vkorg, b~vtweg, b~fkdat
-    UP TO @p_maxrec ROWS
     INTO TABLE @lt_bill_cnt.
 
   LOOP AT lt_bill_cnt INTO DATA(ls_bc).
@@ -438,7 +429,6 @@ FORM fetch_doc_flow.
       AND k~auart IN @s_auart
       AND b~fkdat IN @s_erdat
     GROUP BY k~auart, b~fkart
-    UP TO @p_maxrec ROWS
     INTO TABLE @lt_raw.
 
   IF lt_raw IS INITIAL.
