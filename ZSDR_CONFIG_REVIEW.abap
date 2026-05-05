@@ -138,13 +138,13 @@ SELECTION-SCREEN END OF BLOCK b1.
 
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
-  PARAMETERS: r_ord  RADIOBUTTON GROUP r1 DEFAULT 'X',
-              r_itm  RADIOBUTTON GROUP r1,
-              r_bil  RADIOBUTTON GROUP r1,
-              r_out  RADIOBUTTON GROUP r1,
-              r_t685 RADIOBUTTON GROUP r1,
-              r_trn  RADIOBUTTON GROUP r1,
-              r_flw  RADIOBUTTON GROUP r1.
+  PARAMETERS: r_order  RADIOBUTTON GROUP r1 DEFAULT 'X',
+              r_itmcat RADIOBUTTON GROUP r1,
+              r_biltyp RADIOBUTTON GROUP r1,
+              r_output RADIOBUTTON GROUP r1,
+              r_outtyp RADIOBUTTON GROUP r1,
+              r_trans  RADIOBUTTON GROUP r1,
+              r_dflow  RADIOBUTTON GROUP r1.
 SELECTION-SCREEN END OF BLOCK b3.
 
 *----------------------------------------------------------------------*
@@ -152,7 +152,7 @@ SELECTION-SCREEN END OF BLOCK b3.
 *----------------------------------------------------------------------*
 AT SELECTION-SCREEN.
   IF s_erdat[] IS INITIAL AND
-     ( r_bil = abap_true OR r_trn = abap_true OR r_flw = abap_true ).
+     ( r_biltyp = abap_true OR r_trans = abap_true OR r_dflow = abap_true ).
     MESSAGE w398(00) WITH 'No date range — this view may run long on large systems'.
   ENDIF.
 
@@ -161,13 +161,13 @@ AT SELECTION-SCREEN.
 *----------------------------------------------------------------------*
 START-OF-SELECTION.
   CASE 'X'.
-    WHEN r_ord.  PERFORM fetch_sd_order_types.
-    WHEN r_itm.  PERFORM fetch_item_categories.
-    WHEN r_bil.  PERFORM fetch_billing_types.
-    WHEN r_out.  PERFORM fetch_nace_output.
-    WHEN r_t685. PERFORM fetch_nace_access.
-    WHEN r_trn.  PERFORM fetch_transactional_summary.
-    WHEN r_flw.  PERFORM fetch_doc_flow.
+    WHEN r_order.  PERFORM fetch_sd_order_types.
+    WHEN r_itmcat. PERFORM fetch_item_categories.
+    WHEN r_biltyp. PERFORM fetch_billing_types.
+    WHEN r_output. PERFORM fetch_nace_output.
+    WHEN r_outtyp. PERFORM fetch_nace_access.
+    WHEN r_trans.  PERFORM fetch_transactional_summary.
+    WHEN r_dflow.  PERFORM fetch_doc_flow.
   ENDCASE.
 
 END-OF-SELECTION.
@@ -200,7 +200,6 @@ FORM fetch_sd_order_types.
     WHERE vkorg IN @s_vkorg
       AND vtweg IN @s_vtweg
       AND spart IN @s_spart
-      AND erdat IN @s_erdat
     GROUP BY auart
     INTO TABLE @lt_auart_cnt.
 
@@ -478,43 +477,43 @@ FORM display_alv.
 
   TRY.
       CASE 'X'.
-        WHEN r_ord.
+        WHEN r_order.
           lv_title = 'Order Document Types'.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_vbak_types ).
 
-        WHEN r_itm.
+        WHEN r_itmcat.
           lv_title = 'Item Categories'.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_item_cat ).
 
-        WHEN r_bil.
+        WHEN r_biltyp.
           lv_title = 'Billing Document Types'.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_bill_types ).
 
-        WHEN r_out.
+        WHEN r_output.
           lv_title = 'Output Condition Records'.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_output ).
 
-        WHEN r_t685.
+        WHEN r_outtyp.
           lv_title = 'Output Condition Types'.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_nace_access ).
 
-        WHEN r_trn.
+        WHEN r_trans.
           lv_title = 'Transactional Summary'.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_trans_summary ).
 
-        WHEN r_flw.
+        WHEN r_dflow.
           lv_title = 'Document Flow: Order Type to Billing Type'.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
