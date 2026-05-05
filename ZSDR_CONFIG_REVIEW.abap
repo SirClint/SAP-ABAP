@@ -135,7 +135,7 @@ SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
                   s_vtweg FOR vbak-vtweg,
                   s_spart FOR vbak-spart,
                   s_auart FOR vbak-auart,
-                  s_erdat FOR vbak-erdat DEFAULT sy-datum.
+                  s_erdat FOR vbak-erdat.
 SELECTION-SCREEN END OF BLOCK b1.
 
 
@@ -148,6 +148,16 @@ SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
               r_trans  RADIOBUTTON GROUP r1,
               r_dflow  RADIOBUTTON GROUP r1.
 SELECTION-SCREEN END OF BLOCK b3.
+
+*----------------------------------------------------------------------*
+* INITIALIZATION
+*----------------------------------------------------------------------*
+INITIALIZATION.
+  s_erdat-sign   = 'I'.
+  s_erdat-option = 'BT'.
+  s_erdat-low    = sy-datum - 365.
+  s_erdat-high   = sy-datum.
+  APPEND s_erdat TO s_erdat[].
 
 *----------------------------------------------------------------------*
 * SELECTION SCREEN VALIDATION
@@ -365,8 +375,7 @@ ENDFORM.
 *----------------------------------------------------------------------*
 FORM fetch_nace_access.
   SELECT DISTINCT kappl, kschl
-    FROM t685a
-    WHERE kappl IN ( 'V1', 'V2', 'V3' )
+    FROM t685
     INTO TABLE @gt_nace_access.
 
   SORT gt_nace_access BY kappl kschl.
