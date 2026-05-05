@@ -334,7 +334,7 @@ FORM fetch_nace_output.
     FROM nach
     WHERE kappl IN ( 'V1', 'V2', 'V3' )
     GROUP BY kappl, kschl
-    INTO TABLE @gt_output.
+    INTO CORRESPONDING FIELDS OF TABLE @gt_output.
 
   LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_out>).
     <ls_out>-appl_txt = SWITCH #( <ls_out>-kappl
