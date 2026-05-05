@@ -72,7 +72,6 @@ TYPES:
     auart     TYPE auart,
     pstyv     TYPE pstyv,
     vtext     TYPE text30,
-    count     TYPE i,
   END OF ty_item_cat,
 
   " --- Billing Config ---
@@ -282,8 +281,7 @@ FORM fetch_item_categories.
     ENDIF.
     DATA(ls_item) = VALUE ty_item_cat(
       auart = ls_t184-auart
-      pstyv = ls_t184-pstyv
-      count = ls_cnt-cnt ).
+      pstyv = ls_t184-pstyv ).
     READ TABLE lt_tvapt WITH TABLE KEY pstyv = ls_t184-pstyv
       INTO DATA(ls_tv).
     IF sy-subrc = 0.
