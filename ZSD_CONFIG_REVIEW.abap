@@ -243,10 +243,13 @@ FORM fetch_item_categories.
 
   DATA lt_tvapt TYPE HASHED TABLE OF ty_tvapt WITH UNIQUE KEY pstyv.
 
-  SELECT DISTINCT auart, pstyv
+  SELECT auart, pstyv
     FROM t184
     WHERE auart IN @s_auart
     INTO TABLE @DATA(lt_t184).
+
+  SORT lt_t184 BY auart pstyv.
+  DELETE ADJACENT DUPLICATES FROM lt_t184 COMPARING auart pstyv.
 
   IF lt_t184 IS NOT INITIAL.
     SELECT pstyv, vtext
