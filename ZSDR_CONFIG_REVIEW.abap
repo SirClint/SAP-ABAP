@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Report  ZSD_CONFIG_REVIEW
+*& Report  ZSDR_CONFIG_REVIEW
 *& Title:  SD Module Configuration & Transactional Review
 *&---------------------------------------------------------------------*
 *& Purpose
@@ -49,7 +49,7 @@
 *&   Requires SAP_BASIS 7.40 SP05 or higher (uses VALUE / COND /
 *&   inline DATA / strict Open SQL). Verified on 7.50 SP14.
 *&---------------------------------------------------------------------*
-REPORT zsd_config_review.
+REPORT zsdr_config_review.
 
 *----------------------------------------------------------------------*
 * TABLE WORK AREAS
@@ -150,14 +150,6 @@ SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
               r_trn  RADIOBUTTON GROUP r1,
               r_flw  RADIOBUTTON GROUP r1.
 SELECTION-SCREEN END OF BLOCK b3.
-
-*----------------------------------------------------------------------*
-* INITIALIZATION
-*----------------------------------------------------------------------*
-INITIALIZATION.
-  TEXT-001 = 'Selection Criteria'.
-  TEXT-002 = 'Performance'.
-  TEXT-003 = 'View (pick one)'.
 
 *----------------------------------------------------------------------*
 * SELECTION SCREEN VALIDATION
