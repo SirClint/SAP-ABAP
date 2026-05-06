@@ -19,12 +19,10 @@
 *&                               VBRK invoices per billing type
 *&   4. Output Records         - NACH condition records (V1/V2/V3),
 *&                               counts grouped by KAPPL + KSCHL
-*&   5. Output Cond Types      - Distinct output types from NACH
-*&                               (V1/V2/V3) with application label
-*&   6. Transactional Summary  - Order count and net value by
-*&                               (auart, vkorg, vtweg, erdat) from
-*&                               VBAK GROUP BY — no joins
-*&   7. Billing Volume         - Billing doc count by billing type
+*&   5. Transactional Summary  - Order count and net value by
+*&                               (auart, vkorg, vtweg) aggregated
+*&                               across the selected date range
+*&   6. Billing Volume         - Billing doc count by billing type
 *&                               and sales area from VBRK GROUP BY
 *&                               — no VBRP/VBAK join
 *&
@@ -41,7 +39,7 @@
 *&
 *& Output
 *&   Object-oriented ALV display via CL_SALV_TABLE. The selection
-*&   screen offers seven radio buttons; one report run shows one
+*&   screen offers six radio buttons; one report run shows one
 *&   view. Re-run the report to switch views. No spool, no file
 *&   output, no remote calls.
 *&
@@ -90,20 +88,13 @@ TYPES:
     count     TYPE i,
   END OF ty_output,
 
-  BEGIN OF ty_nace_access,
-    kappl    TYPE kappl,
-    appl_txt TYPE c LENGTH 20,
-    kschl    TYPE kschl,
-  END OF ty_nace_access,
-
   " --- Transactional Summary ---
   BEGIN OF ty_trans_summary,
-    auart     TYPE auart,
-    vkorg     TYPE vkorg,
-    vtweg     TYPE vtweg,
-    erdat     TYPE erdat,
-    ord_cnt   TYPE i,
-    net_val   TYPE netwr,
+    auart   TYPE auart,
+    vkorg   TYPE vkorg,
+    vtweg   TYPE vtweg,
+    ord_cnt TYPE i,
+    net_val TYPE netwr,
   END OF ty_trans_summary,
 
   " --- Billing Volume ---
@@ -123,7 +114,6 @@ DATA:
   gt_item_cat      TYPE TABLE OF ty_item_cat,
   gt_bill_types    TYPE TABLE OF ty_bill_types,
   gt_output        TYPE TABLE OF ty_output,
-  gt_nace_access   TYPE TABLE OF ty_nace_access,
   gt_trans_summary TYPE TABLE OF ty_trans_summary,
   gt_doc_flow      TYPE TABLE OF ty_doc_flow.
 
@@ -146,7 +136,6 @@ DATA:
 *   R_ITMCAT  "Item Categories"
 *   R_BILTYP  "Billing Document Types"
 *   R_OUTPUT  "Output Condition Records"
-*   R_OUTTYP  "Output Condition Types"
 *   R_TRANS   "Transactional Summary"
 *   R_DFLOW   "Billing Volume by Type"
 *----------------------------------------------------------------------*
@@ -163,7 +152,6 @@ SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
               r_itmcat RADIOBUTTON GROUP r1,
               r_biltyp RADIOBUTTON GROUP r1,
               r_output RADIOBUTTON GROUP r1,
-              r_outtyp RADIOBUTTON GROUP r1,
               r_trans  RADIOBUTTON GROUP r1,
               r_dflow  RADIOBUTTON GROUP r1.
 SELECTION-SCREEN END OF BLOCK b3.
@@ -196,7 +184,6 @@ START-OF-SELECTION.
     WHEN r_itmcat. PERFORM fetch_item_categories.
     WHEN r_biltyp. PERFORM fetch_billing_types.
     WHEN r_output. PERFORM fetch_nace_output.
-    WHEN r_outtyp. PERFORM fetch_nace_access.
     WHEN r_trans.  PERFORM fetch_transactional_summary.
     WHEN r_dflow.  PERFORM fetch_doc_flow.
   ENDCASE.
@@ -388,45 +375,13 @@ FORM fetch_nace_output.
 ENDFORM.
 
 *----------------------------------------------------------------------*
-* FORM: FETCH_NACE_ACCESS
-* Distinct output condition types from NACH with application label.
-* Complements r_output (which shows counts per type); this shows
-* which types are configured at a glance, sorted config-style.
-*----------------------------------------------------------------------*
-FORM fetch_nace_access.
-  TYPES: BEGIN OF ty_nach_keys,
-           kappl TYPE kappl,
-           kschl TYPE kschl,
-         END OF ty_nach_keys.
-
-  DATA lt_keys TYPE TABLE OF ty_nach_keys.
-
-  SELECT DISTINCT kappl, kschl
-    FROM nach
-    WHERE kappl IN ( 'V1', 'V2', 'V3' )
-    INTO TABLE @lt_keys.
-
-  LOOP AT lt_keys INTO DATA(ls_key).
-    APPEND VALUE ty_nace_access(
-      kappl    = ls_key-kappl
-      kschl    = ls_key-kschl
-      appl_txt = SWITCH #( ls_key-kappl
-        WHEN 'V1' THEN 'Sales'
-        WHEN 'V2' THEN 'Shipping'
-        WHEN 'V3' THEN 'Billing' ) ) TO gt_nace_access.
-  ENDLOOP.
-
-  SORT gt_nace_access BY kappl kschl.
-ENDFORM.
-
-*----------------------------------------------------------------------*
 * FORM: FETCH_TRANSACTIONAL_SUMMARY
-* Order volume by order type, sales area, and creation date.
-* Pure VBAK GROUP BY — no joins, uses VKORG index, fast on any
-* data volume. Bill_cnt removed; see r_dflow for billing side.
+* Order count and net order value by order type and sales area,
+* aggregated across the full selected date range. One row per
+* (auart, vkorg, vtweg) — use s_erdat to scope the period.
 *----------------------------------------------------------------------*
 FORM fetch_transactional_summary.
-  SELECT auart, vkorg, vtweg, erdat,
+  SELECT auart, vkorg, vtweg,
          COUNT(*) AS ord_cnt,
          SUM( netwr ) AS net_val
     FROM vbak
@@ -435,10 +390,10 @@ FORM fetch_transactional_summary.
       AND spart IN @s_spart
       AND auart IN @s_auart
       AND erdat IN @s_erdat
-    GROUP BY auart, vkorg, vtweg, erdat
+    GROUP BY auart, vkorg, vtweg
     INTO CORRESPONDING FIELDS OF TABLE @gt_trans_summary.
 
-  SORT gt_trans_summary BY vkorg vtweg erdat DESCENDING.
+  SORT gt_trans_summary BY vkorg vtweg ord_cnt DESCENDING.
 ENDFORM.
 
 *----------------------------------------------------------------------*
@@ -527,12 +482,6 @@ FORM display_alv.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_output ).
-
-        WHEN r_outtyp.
-          lv_title = 'Output Condition Types'.
-          cl_salv_table=>factory(
-            IMPORTING r_salv_table = lo_alv
-            CHANGING  t_table      = gt_nace_access ).
 
         WHEN r_trans.
           lv_title = 'Transactional Summary'.
