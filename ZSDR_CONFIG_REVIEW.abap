@@ -41,7 +41,7 @@
 *&
 *& Output
 *&   Object-oriented ALV display via CL_SALV_TABLE. The selection
-*&   screen offers eight radio buttons; one report run shows one
+*&   screen offers seven radio buttons; one report run shows one
 *&   view. Re-run the report to switch views. No spool, no file
 *&   output, no remote calls.
 *&
@@ -102,7 +102,7 @@ TYPES:
     vkorg     TYPE vkorg,
     vtweg     TYPE vtweg,
     erdat     TYPE erdat,
-    order_cnt TYPE i,
+    ord_cnt   TYPE i,
     net_val   TYPE netwr,
   END OF ty_trans_summary,
 
@@ -408,7 +408,7 @@ ENDFORM.
 *----------------------------------------------------------------------*
 FORM fetch_transactional_summary.
   SELECT auart, vkorg, vtweg, erdat,
-         COUNT(*) AS order_cnt,
+         COUNT(*) AS ord_cnt,
          SUM( netwr ) AS net_val
     FROM vbak
     WHERE vkorg IN @s_vkorg
