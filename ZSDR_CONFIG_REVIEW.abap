@@ -129,6 +129,26 @@ DATA:
 
 *----------------------------------------------------------------------*
 * SELECTION SCREEN
+*
+* Text elements are maintained in SE38 -> Goto -> Text Elements.
+*
+* Text Symbols (block frame titles):
+*   TEXT-001  "Selection Criteria"
+*   TEXT-003  "View (pick one)"
+*
+* Selection Texts (SE38 -> Goto -> Text Elements -> Selection Texts):
+*   S_VKORG   "Sales Organization"
+*   S_VTWEG   "Distribution Channel"
+*   S_SPART   "Division"
+*   S_AUART   "Order Type"
+*   S_ERDAT   "Date Range"
+*   R_ORDER   "Order Document Types"
+*   R_ITMCAT  "Item Categories"
+*   R_BILTYP  "Billing Document Types"
+*   R_OUTPUT  "Output Condition Records"
+*   R_OUTTYP  "Output Condition Types"
+*   R_TRANS   "Transactional Summary"
+*   R_DFLOW   "Billing Volume by Type"
 *----------------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
   SELECT-OPTIONS: s_vkorg FOR vbak-vkorg,
@@ -137,7 +157,6 @@ SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
                   s_auart FOR vbak-auart,
                   s_erdat FOR vbak-erdat.
 SELECTION-SCREEN END OF BLOCK b1.
-
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
   PARAMETERS: r_order  RADIOBUTTON GROUP r1 DEFAULT 'X',
