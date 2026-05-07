@@ -20,16 +20,17 @@
 *&   4. Output Records         - NACH condition records (V1/V2/V3),
 *&                               counts grouped by KAPPL + KSCHL
 *&   5. Transactional Summary  - Order count and net value by
-*&                               (auart, vkorg, vtweg) aggregated
-*&                               across the selected date range
+*&                               (auart, vkorg) aggregated across
+*&                               the selected date range
 *&   6. Billing Volume         - Billing doc count by billing type
 *&                               and sales area from VBRK GROUP BY
 *&                               — no VBRP/VBAK join
 *&
 *& Inputs
-*&   s_vkorg / s_vtweg / s_spart  - sales area selection
-*&   s_auart                       - order-type filter
-*&   s_erdat                       - date range (default: last 365 days)
+*&   s_vkorg  - sales org filter (Distribution Channel and Division
+*&              are hardcoded to '01' — always constant in this system)
+*&   s_auart  - order-type filter
+*&   s_erdat  - date range (default: last 365 days)
 *&
 *& Tables read (READ-ONLY; no UPDATE / INSERT / MODIFY / DELETE /
 *& COMMIT against any database table — internal-table DELETE
@@ -63,6 +64,7 @@ TYPES:
   " --- Sales Order Config ---
   BEGIN OF ty_vbak_types,
     auart     TYPE auart,
+    vkorg     TYPE vkorg,
     bezei     TYPE text30,
     count     TYPE i,
   END OF ty_vbak_types,
@@ -92,7 +94,6 @@ TYPES:
   BEGIN OF ty_trans_summary,
     auart   TYPE auart,
     vkorg   TYPE vkorg,
-    vtweg   TYPE vtweg,
     ord_cnt TYPE i,
     net_val TYPE netwr,
   END OF ty_trans_summary,
@@ -102,7 +103,6 @@ TYPES:
     fkart     TYPE fkart,
     fkart_txt TYPE text30,
     vkorg     TYPE vkorg,
-    vtweg     TYPE vtweg,
     bill_cnt  TYPE i,
   END OF ty_doc_flow.
 
@@ -128,8 +128,6 @@ DATA:
 *
 * Selection Texts (SE38 -> Goto -> Text Elements -> Selection Texts):
 *   S_VKORG   "Sales Organization"
-*   S_VTWEG   "Distribution Channel"
-*   S_SPART   "Division"
 *   S_AUART   "Order Type"
 *   S_ERDAT   "Date Range"
 *   R_ORDER   "Order Document Types"
@@ -141,8 +139,6 @@ DATA:
 *----------------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
   SELECT-OPTIONS: s_vkorg FOR vbak-vkorg,
-                  s_vtweg FOR vbak-vtweg,
-                  s_spart FOR vbak-spart,
                   s_auart FOR vbak-auart,
                   s_erdat FOR vbak-erdat.
 SELECTION-SCREEN END OF BLOCK b1.
@@ -197,38 +193,45 @@ END-OF-SELECTION.
 * Order counts fetched in a single GROUP BY query — no SELECT in loop.
 *----------------------------------------------------------------------*
 FORM fetch_sd_order_types.
-  TYPES: BEGIN OF ty_auart_cnt,
+  TYPES: BEGIN OF ty_tvak_desc,
            auart TYPE auart,
+           bezei TYPE text30,
+         END OF ty_tvak_desc,
+         BEGIN OF ty_vkorg_cnt,
+           auart TYPE auart,
+           vkorg TYPE vkorg,
            cnt   TYPE i,
-         END OF ty_auart_cnt.
+         END OF ty_vkorg_cnt.
 
-  DATA: lt_tvak      TYPE TABLE OF ty_vbak_types,
-        lt_auart_cnt TYPE HASHED TABLE OF ty_auart_cnt
-                     WITH UNIQUE KEY auart.
+  DATA: lt_desc TYPE HASHED TABLE OF ty_tvak_desc WITH UNIQUE KEY auart,
+        lt_raw  TYPE TABLE OF ty_vkorg_cnt.
 
   SELECT a~auart, t~bezei
     FROM tvak AS a
     LEFT OUTER JOIN tvakt AS t
       ON t~auart = a~auart
      AND t~spras = @sy-langu
-    INTO CORRESPONDING FIELDS OF TABLE @lt_tvak.
+    INTO CORRESPONDING FIELDS OF TABLE @lt_desc.
 
-  SELECT auart, COUNT(*) AS cnt
+  SELECT auart, vkorg, COUNT(*) AS cnt
     FROM vbak
     WHERE vkorg IN @s_vkorg
-      AND vtweg IN @s_vtweg
-      AND spart IN @s_spart
-    GROUP BY auart
-    INTO TABLE @lt_auart_cnt.
+      AND vtweg = '01'
+      AND spart = '01'
+    GROUP BY auart, vkorg
+    INTO TABLE @lt_raw.
 
-  LOOP AT lt_tvak INTO DATA(ls_tvak).
-    READ TABLE lt_auart_cnt WITH TABLE KEY auart = ls_tvak-auart
-      INTO DATA(ls_cnt).
-    ls_tvak-count = COND #( WHEN sy-subrc = 0 THEN ls_cnt-cnt ELSE 0 ).
-    APPEND ls_tvak TO gt_vbak_types.
+  LOOP AT lt_raw INTO DATA(ls_raw).
+    DATA(ls_row) = VALUE ty_vbak_types(
+      auart = ls_raw-auart
+      vkorg = ls_raw-vkorg
+      count = ls_raw-cnt ).
+    READ TABLE lt_desc WITH TABLE KEY auart = ls_raw-auart INTO DATA(ls_desc).
+    IF sy-subrc = 0. ls_row-bezei = ls_desc-bezei. ENDIF.
+    APPEND ls_row TO gt_vbak_types.
   ENDLOOP.
 
-  SORT gt_vbak_types BY count DESCENDING.
+  SORT gt_vbak_types BY vkorg count DESCENDING.
 ENDFORM.
 
 *----------------------------------------------------------------------*
@@ -274,8 +277,8 @@ FORM fetch_item_categories.
   SELECT auart, COUNT(*) AS cnt
     FROM vbak
     WHERE vkorg IN @s_vkorg
-      AND vtweg IN @s_vtweg
-      AND spart IN @s_spart
+      AND vtweg = '01'
+      AND spart = '01'
       AND auart IN @s_auart
     GROUP BY auart
     INTO TABLE @lt_auart_cnt.
@@ -325,8 +328,8 @@ FORM fetch_billing_types.
   SELECT fkart, COUNT(*) AS cnt
     FROM vbrk
     WHERE vkorg IN @s_vkorg
-      AND vtweg IN @s_vtweg
-      AND spart IN @s_spart
+      AND vtweg = '01'
+      AND spart = '01'
     GROUP BY fkart
     INTO TABLE @lt_fkart_cnt.
 
@@ -378,22 +381,22 @@ ENDFORM.
 * FORM: FETCH_TRANSACTIONAL_SUMMARY
 * Order count and net order value by order type and sales area,
 * aggregated across the full selected date range. One row per
-* (auart, vkorg, vtweg) — use s_erdat to scope the period.
+* (auart, vkorg) — use s_erdat to scope the period.
 *----------------------------------------------------------------------*
 FORM fetch_transactional_summary.
-  SELECT auart, vkorg, vtweg,
+  SELECT auart, vkorg,
          COUNT(*) AS ord_cnt,
          SUM( netwr ) AS net_val
     FROM vbak
     WHERE vkorg IN @s_vkorg
-      AND vtweg IN @s_vtweg
-      AND spart IN @s_spart
+      AND vtweg = '01'
+      AND spart = '01'
       AND auart IN @s_auart
       AND erdat IN @s_erdat
-    GROUP BY auart, vkorg, vtweg
+    GROUP BY auart, vkorg
     INTO CORRESPONDING FIELDS OF TABLE @gt_trans_summary.
 
-  SORT gt_trans_summary BY vkorg vtweg ord_cnt DESCENDING.
+  SORT gt_trans_summary BY vkorg ord_cnt DESCENDING.
 ENDFORM.
 
 *----------------------------------------------------------------------*
@@ -406,20 +409,19 @@ FORM fetch_doc_flow.
   TYPES: BEGIN OF ty_fkart_cnt,
            fkart TYPE fkart,
            vkorg TYPE vkorg,
-           vtweg TYPE vtweg,
            cnt   TYPE i,
          END OF ty_fkart_cnt.
 
   DATA: lt_raw   TYPE TABLE OF ty_fkart_cnt,
         lt_tvfkt TYPE HASHED TABLE OF ty_bill_types WITH UNIQUE KEY fkart.
 
-  SELECT fkart, vkorg, vtweg, COUNT(*) AS cnt
+  SELECT fkart, vkorg, COUNT(*) AS cnt
     FROM vbrk
     WHERE vkorg IN @s_vkorg
-      AND vtweg IN @s_vtweg
-      AND spart IN @s_spart
+      AND vtweg = '01'
+      AND spart = '01'
       AND fkdat IN @s_erdat
-    GROUP BY fkart, vkorg, vtweg
+    GROUP BY fkart, vkorg
     INTO TABLE @lt_raw.
 
   IF lt_raw IS INITIAL.
@@ -435,7 +437,6 @@ FORM fetch_doc_flow.
     DATA(ls_flow) = VALUE ty_doc_flow(
       fkart    = ls_raw-fkart
       vkorg    = ls_raw-vkorg
-      vtweg    = ls_raw-vtweg
       bill_cnt = ls_raw-cnt ).
     READ TABLE lt_tvfkt WITH TABLE KEY fkart = ls_raw-fkart
       INTO DATA(ls_ft).
@@ -443,7 +444,7 @@ FORM fetch_doc_flow.
     APPEND ls_flow TO gt_doc_flow.
   ENDLOOP.
 
-  SORT gt_doc_flow BY fkart vkorg vtweg.
+  SORT gt_doc_flow BY fkart vkorg.
 ENDFORM.
 
 *----------------------------------------------------------------------*
