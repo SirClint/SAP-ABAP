@@ -448,8 +448,8 @@ FORM fetch_doc_flow.
       AND r~fkdat IN @s_erdat
       AND k~auart IN @s_auart
     GROUP BY k~auart, r~fkart, r~vkorg
-    UP TO @p_maxrec ROWS
-    INTO TABLE @lt_raw.
+    INTO TABLE @lt_raw
+    UP TO @p_maxrec ROWS.
 
   IF lt_raw IS INITIAL.
     RETURN.
