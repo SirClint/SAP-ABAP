@@ -417,7 +417,7 @@ ENDFORM.
 * Shows order-type to billing-type document flow paths.
 * VBRK->VBRP->VBAK join via VBRP-AUBEL (billing item back-reference).
 * COUNT DISTINCT on billing doc avoids inflating multi-item invoices.
-* Capped by p_maxrec; date filter on VBRK-FKDAT limits VBRP rows read.
+* Date filter on VBRK-FKDAT limits VBRP rows read; GROUP BY keeps result small.
 *----------------------------------------------------------------------*
 FORM fetch_doc_flow.
   TYPES: BEGIN OF ty_raw,
@@ -448,8 +448,7 @@ FORM fetch_doc_flow.
       AND r~fkdat IN @s_erdat
       AND k~auart IN @s_auart
     GROUP BY k~auart, r~fkart, r~vkorg
-    INTO TABLE @lt_raw
-    UP TO @p_maxrec ROWS.
+    INTO TABLE @lt_raw.
 
   IF lt_raw IS INITIAL.
     RETURN.
