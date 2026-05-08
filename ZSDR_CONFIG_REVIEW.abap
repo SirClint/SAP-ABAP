@@ -95,6 +95,7 @@ TYPES:
   BEGIN OF ty_trans_summary,
     auart   TYPE auart,
     vkorg   TYPE vkorg,
+    waerk   TYPE waerk,
     ord_cnt TYPE i,
     net_val TYPE netwr,
   END OF ty_trans_summary,
@@ -394,7 +395,7 @@ ENDFORM.
 * (auart, vkorg) — use s_erdat to scope the period.
 *----------------------------------------------------------------------*
 FORM fetch_transactional_summary.
-  SELECT auart, vkorg,
+  SELECT auart, vkorg, waerk,
          COUNT(*) AS ord_cnt,
          SUM( netwr ) AS net_val
     FROM vbak
@@ -403,10 +404,10 @@ FORM fetch_transactional_summary.
       AND spart = '01'
       AND auart IN @s_auart
       AND erdat IN @s_erdat
-    GROUP BY auart, vkorg
+    GROUP BY auart, vkorg, waerk
     INTO CORRESPONDING FIELDS OF TABLE @gt_trans_summary.
 
-  SORT gt_trans_summary BY vkorg ord_cnt DESCENDING.
+  SORT gt_trans_summary BY vkorg waerk ord_cnt DESCENDING.
 ENDFORM.
 
 *----------------------------------------------------------------------*
