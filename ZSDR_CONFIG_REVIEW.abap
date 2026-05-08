@@ -523,6 +523,78 @@ ENDFORM.
 * Progress shown via SAPGUI_PROGRESS_INDICATOR.
 *----------------------------------------------------------------------*
 FORM fetch_zprog.
+  TYPES: BEGIN OF ty_trdir_row,
+           name TYPE c LENGTH 40,
+           subc TYPE c LENGTH 1,
+           cnam TYPE c LENGTH 12,
+           cdat TYPE d,
+           udat TYPE d,
+         END OF ty_trdir_row,
+         BEGIN OF ty_desc,
+           name  TYPE c LENGTH 40,
+           title TYPE c LENGTH 60,
+         END OF ty_desc,
+         BEGIN OF ty_pkg,
+           obj_name TYPE c LENGTH 40,
+           devclass TYPE c LENGTH 30,
+         END OF ty_pkg,
+         BEGIN OF ty_spool,
+           rqpnm     TYPE c LENGTH 40,
+           last_date TYPE d,
+         END OF ty_spool,
+         ty_name_set TYPE HASHED TABLE OF c LENGTH 40
+                     WITH UNIQUE KEY table_line.
+
+  DATA: lt_trdir  TYPE TABLE OF ty_trdir_row,
+        lt_desc   TYPE HASHED TABLE OF ty_desc  WITH UNIQUE KEY name,
+        lt_pkg    TYPE HASHED TABLE OF ty_pkg   WITH UNIQUE KEY obj_name,
+        lt_spool  TYPE HASHED TABLE OF ty_spool WITH UNIQUE KEY rqpnm,
+        lt_noise  TYPE HASHED TABLE OF c LENGTH 40 WITH UNIQUE KEY table_line,
+        lt_selscr TYPE ty_name_set,
+        lt_filein TYPE ty_name_set,
+        lt_write  TYPE ty_name_set,
+        lt_alv    TYPE ty_name_set,
+        lt_xfer   TYPE ty_name_set,
+        lv_has_selscr TYPE abap_bool,
+        lv_has_filein TYPE abap_bool,
+        lv_out    TYPE c LENGTH 20,
+        lv_sep    TYPE c LENGTH 1,
+        lv_total  TYPE i,
+        lv_idx    TYPE i,
+        lv_pct    TYPE i.
+
+  " 1. Base program list
+  SELECT name, subc, cnam, cdat, udat
+    FROM trdir
+    WHERE name LIKE 'Z%'
+    INTO TABLE @lt_trdir.
+
+  IF lt_trdir IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  " 2. Short descriptions
+  SELECT name, title
+    FROM trdirt
+    WHERE sprsl = @sy-langu
+      AND name LIKE 'Z%'
+    INTO TABLE @lt_desc.
+
+  " 3. Package / development class
+  SELECT obj_name, devclass
+    FROM tadir
+    WHERE pgmid    = 'R3TR'
+      AND object   = 'PROG'
+      AND obj_name LIKE 'Z%'
+    INTO TABLE @lt_pkg.
+
+  " 4. Last spool date per program
+  SELECT rqpnm, MAX( rqcrdat ) AS last_date
+    FROM tsp01
+    WHERE rqpnm LIKE 'Z%'
+    GROUP BY rqpnm
+    INTO TABLE @lt_spool.
+
 ENDFORM.
 
 *----------------------------------------------------------------------*
