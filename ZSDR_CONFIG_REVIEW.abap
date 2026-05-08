@@ -78,6 +78,7 @@ TYPES:
   " --- Billing Config ---
   BEGIN OF ty_bill_types,
     fkart     TYPE fkart,
+    vkorg     TYPE vkorg,
     vtext     TYPE text30,
     count     TYPE i,
   END OF ty_bill_types,
@@ -309,38 +310,47 @@ ENDFORM.
 * Invoice counts fetched in a single GROUP BY query — no SELECT in loop.
 *----------------------------------------------------------------------*
 FORM fetch_billing_types.
-  TYPES: BEGIN OF ty_fkart_cnt,
+  TYPES: BEGIN OF ty_fkart_raw,
            fkart TYPE fkart,
+           vkorg TYPE vkorg,
            cnt   TYPE i,
-         END OF ty_fkart_cnt.
+         END OF ty_fkart_raw,
+         BEGIN OF ty_tvfkt,
+           fkart TYPE fkart,
+           vtext TYPE text30,
+         END OF ty_tvfkt.
 
-  DATA: lt_tvfk      TYPE TABLE OF ty_bill_types,
-        lt_fkart_cnt TYPE HASHED TABLE OF ty_fkart_cnt
-                     WITH UNIQUE KEY fkart.
+  DATA: lt_raw   TYPE TABLE OF ty_fkart_raw,
+        lt_tvfkt TYPE HASHED TABLE OF ty_tvfkt WITH UNIQUE KEY fkart.
 
-  SELECT a~fkart, t~vtext
-    FROM tvfk AS a
-    LEFT OUTER JOIN tvfkt AS t
-      ON t~fkart = a~fkart
-     AND t~spras = @sy-langu
-    INTO CORRESPONDING FIELDS OF TABLE @lt_tvfk.
-
-  SELECT fkart, COUNT(*) AS cnt
+  SELECT fkart, vkorg, COUNT(*) AS cnt
     FROM vbrk
     WHERE vkorg IN @s_vkorg
       AND vtweg = '01'
       AND spart = '01'
-    GROUP BY fkart
-    INTO TABLE @lt_fkart_cnt.
+    GROUP BY fkart, vkorg
+    INTO TABLE @lt_raw.
 
-  LOOP AT lt_tvfk INTO DATA(ls_tvfk).
-    READ TABLE lt_fkart_cnt WITH TABLE KEY fkart = ls_tvfk-fkart
-      INTO DATA(ls_cnt).
-    ls_tvfk-count = COND #( WHEN sy-subrc = 0 THEN ls_cnt-cnt ELSE 0 ).
-    APPEND ls_tvfk TO gt_bill_types.
+  IF lt_raw IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  SELECT fkart, vtext
+    FROM tvfkt
+    WHERE spras = @sy-langu
+    INTO TABLE @lt_tvfkt.
+
+  LOOP AT lt_raw INTO DATA(ls_raw).
+    DATA(ls_bill) = VALUE ty_bill_types(
+      fkart = ls_raw-fkart
+      vkorg = ls_raw-vkorg
+      count = ls_raw-cnt ).
+    READ TABLE lt_tvfkt WITH TABLE KEY fkart = ls_raw-fkart INTO DATA(ls_ft).
+    IF sy-subrc = 0. ls_bill-vtext = ls_ft-vtext. ENDIF.
+    APPEND ls_bill TO gt_bill_types.
   ENDLOOP.
 
-  SORT gt_bill_types BY count DESCENDING.
+  SORT gt_bill_types BY vkorg fkart.
 ENDFORM.
 
 *----------------------------------------------------------------------*
