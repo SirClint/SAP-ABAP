@@ -366,7 +366,7 @@ FORM fetch_nace_output.
   TYPES: BEGIN OF ty_nach_raw,
            kappl TYPE kappl,
            kschl TYPE kschl,
-           nacha TYPE nacha,
+           nacha TYPE c LENGTH 1,
            cnt   TYPE i,
          END OF ty_nach_raw.
 
