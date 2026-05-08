@@ -350,7 +350,7 @@ FORM fetch_billing_types.
     APPEND ls_bill TO gt_bill_types.
   ENDLOOP.
 
-  SORT gt_bill_types BY vkorg fkart.
+  SORT gt_bill_types BY vkorg ASCENDING count DESCENDING.
 ENDFORM.
 
 *----------------------------------------------------------------------*
