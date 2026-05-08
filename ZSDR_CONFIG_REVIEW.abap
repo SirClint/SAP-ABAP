@@ -109,7 +109,21 @@ TYPES:
     fkart     TYPE fkart,
     fkart_txt TYPE text30,
     bill_cnt  TYPE i,
-  END OF ty_doc_flow.
+  END OF ty_doc_flow,
+
+  " --- Z Program Inventory ---
+  BEGIN OF ty_zprog,
+    progname    TYPE c LENGTH 40,
+    prog_txt    TYPE c LENGTH 60,
+    devclass    TYPE c LENGTH 30,
+    prog_type   TYPE c LENGTH 16,
+    cnam        TYPE c LENGTH 12,
+    cdat        TYPE d,
+    udat        TYPE d,
+    last_spool  TYPE d,
+    input_type  TYPE c LENGTH 20,
+    output_type TYPE c LENGTH 20,
+  END OF ty_zprog.
 
 *----------------------------------------------------------------------*
 * INTERNAL TABLES
@@ -120,7 +134,8 @@ DATA:
   gt_bill_types    TYPE TABLE OF ty_bill_types,
   gt_output        TYPE TABLE OF ty_output,
   gt_trans_summary TYPE TABLE OF ty_trans_summary,
-  gt_doc_flow      TYPE TABLE OF ty_doc_flow.
+  gt_doc_flow      TYPE TABLE OF ty_doc_flow,
+  gt_zprog         TYPE TABLE OF ty_zprog.
 
 *----------------------------------------------------------------------*
 * SELECTION SCREEN
@@ -140,7 +155,10 @@ DATA:
 *   R_BILTYP  "Billing Document Types"
 *   R_OUTPUT  "Output Condition Records"
 *   R_TRANS   "Transactional Summary"
-*   R_DFLOW   "Billing Volume by Type"
+*   R_DFLOW   "Order to Invoice Document Flow"
+*   R_ZPROG   "Z Program Inventory"
+*   P_NOISE   "Exclude Suspected Noise"
+*   TEXT-004  "Z Program Options"
 *----------------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
   SELECT-OPTIONS: s_vkorg FOR vbak-vkorg,
@@ -154,8 +172,13 @@ SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
               r_biltyp RADIOBUTTON GROUP r1,
               r_output RADIOBUTTON GROUP r1,
               r_trans  RADIOBUTTON GROUP r1,
-              r_dflow  RADIOBUTTON GROUP r1.
+              r_dflow  RADIOBUTTON GROUP r1,
+              r_zprog  RADIOBUTTON GROUP r1.
 SELECTION-SCREEN END OF BLOCK b3.
+
+SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE TEXT-004.
+  PARAMETERS: p_noise AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b4.
 
 *----------------------------------------------------------------------*
 * INITIALIZATION
@@ -187,6 +210,7 @@ START-OF-SELECTION.
     WHEN r_output. PERFORM fetch_nace_output.
     WHEN r_trans.  PERFORM fetch_transactional_summary.
     WHEN r_dflow.  PERFORM fetch_doc_flow.
+    WHEN r_zprog.  PERFORM fetch_zprog.
   ENDCASE.
 
 END-OF-SELECTION.
@@ -493,6 +517,15 @@ FORM fetch_doc_flow.
 ENDFORM.
 
 *----------------------------------------------------------------------*
+* FORM: FETCH_ZPROG
+* Inventories all Z programs using TRDIR, TRDIRT, TADIR, TSP01.
+* REPOSRC scanned for noise flags and input/output patterns.
+* Progress shown via SAPGUI_PROGRESS_INDICATOR.
+*----------------------------------------------------------------------*
+FORM fetch_zprog.
+ENDFORM.
+
+*----------------------------------------------------------------------*
 * FORM: DISPLAY_ALV
 * Displays the data table that matches the selected radio button using
 * CL_SALV_TABLE (object-oriented ALV). Auto-builds the field catalog
@@ -540,6 +573,12 @@ FORM display_alv.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_doc_flow ).
+
+        WHEN r_zprog.
+          lv_title = 'Z Program Inventory'.
+          cl_salv_table=>factory(
+            IMPORTING r_salv_table = lo_alv
+            CHANGING  t_table      = gt_zprog ).
       ENDCASE.
 
       lo_alv->get_display_settings( )->set_list_header( lv_title ).
