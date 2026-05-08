@@ -561,8 +561,8 @@ FORM fetch_zprog.
         lt_write  TYPE ty_name_set,
         lt_alv    TYPE ty_name_set,
         lt_xfer   TYPE ty_name_set,
-        lv_has_selscr TYPE abap_bool,
-        lv_has_filein TYPE abap_bool,
+        lv_has_selscr TYPE c LENGTH 1,
+        lv_has_filein TYPE c LENGTH 1,
         lv_out    TYPE c LENGTH 20,
         lv_sep    TYPE c LENGTH 1,
         lv_total  TYPE i,
@@ -603,8 +603,8 @@ FORM fetch_zprog.
 
   " --- Noise detection ---
   " Header scan includes comment lines — '* TEST PROGRAM' is a noise signal
-  IF p_noise = abap_true.
-    SELECT progname, line
+  IF p_noise = 'X'.
+    SELECT *
       FROM reposrc
       WHERE progname LIKE 'Z%'
         AND zeile    <= 20
@@ -701,7 +701,7 @@ FORM fetch_zprog.
         text       = |Analyzing program { lv_idx } of { lv_total }...|.
 
     " Skip noise programs when filter is active
-    IF p_noise = abap_true.
+    IF p_noise = 'X'.
       READ TABLE lt_noise WITH TABLE KEY table_line = ls_prog-name
         TRANSPORTING NO FIELDS.
       IF sy-subrc = 0. CONTINUE. ENDIF.
@@ -731,20 +731,20 @@ FORM fetch_zprog.
     IF sy-subrc = 0. ls_row-last_spool = ls_sp-last_date. ENDIF.
 
     " Input type
-    lv_has_selscr = abap_false.
-    lv_has_filein = abap_false.
+    lv_has_selscr = ''.
+    lv_has_filein = ''.
     READ TABLE lt_selscr WITH TABLE KEY table_line = ls_prog-name
       TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0. lv_has_selscr = abap_true. ENDIF.
+    IF sy-subrc = 0. lv_has_selscr = 'X'. ENDIF.
     READ TABLE lt_filein WITH TABLE KEY table_line = ls_prog-name
       TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0. lv_has_filein = abap_true. ENDIF.
+    IF sy-subrc = 0. lv_has_filein = 'X'. ENDIF.
 
-    IF lv_has_selscr = abap_true AND lv_has_filein = abap_true.
+    IF lv_has_selscr = 'X' AND lv_has_filein = 'X'.
       ls_row-input_type = 'Sel.Screen+File'.
-    ELSEIF lv_has_selscr = abap_true.
+    ELSEIF lv_has_selscr = 'X'.
       ls_row-input_type = 'Sel.Screen'.
-    ELSEIF lv_has_filein = abap_true.
+    ELSEIF lv_has_filein = 'X'.
       ls_row-input_type = 'File'.
     ENDIF.
 
