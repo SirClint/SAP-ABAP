@@ -88,7 +88,7 @@ TYPES:
     kappl     TYPE kappl,
     appl_txt  TYPE c LENGTH 20,
     kschl     TYPE kschl,
-    nacha     TYPE nacha,
+    nacha     TYPE c LENGTH 1,
     count     TYPE i,
   END OF ty_output,
 
