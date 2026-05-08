@@ -535,8 +535,9 @@ FORM fetch_zprog.
            udat TYPE d,
          END OF ty_trdir_row,
          BEGIN OF ty_desc,
-           name  TYPE c LENGTH 40,
-           title TYPE c LENGTH 60,
+           name   TYPE c LENGTH 40,
+           sprsl  TYPE c LENGTH 1,
+           title  TYPE c LENGTH 60,
          END OF ty_desc,
          BEGIN OF ty_pkg,
            obj_name TYPE c LENGTH 40,
@@ -578,12 +579,12 @@ FORM fetch_zprog.
     RETURN.
   ENDIF.
 
-  " 2. Short descriptions
-  SELECT name, title
+  " 2. Short descriptions — SELECT * avoids field-name validation against TRDIRT
+  SELECT *
     FROM trdirt
     WHERE sprsl = @sy-langu
-      AND name LIKE 'Z%'
-    INTO TABLE @lt_desc.
+      AND name  LIKE 'Z%'
+    INTO CORRESPONDING FIELDS OF TABLE @lt_desc.
 
   " 3. Package / development class
   SELECT obj_name, devclass
