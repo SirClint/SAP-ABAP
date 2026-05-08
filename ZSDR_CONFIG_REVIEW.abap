@@ -595,6 +595,92 @@ FORM fetch_zprog.
     GROUP BY rqpnm
     INTO TABLE @lt_spool.
 
+  " --- Noise detection ---
+  " Header scan includes comment lines — '* TEST PROGRAM' is a noise signal
+  IF p_noise = abap_true.
+    SELECT progname, line
+      FROM reposrc
+      WHERE progname LIKE 'Z%'
+        AND zeile    <= 20
+      INTO TABLE @DATA(lt_hdr_lines).
+
+    LOOP AT lt_hdr_lines INTO DATA(ls_hdr).
+      DATA(lv_up_src) = to_upper( ls_hdr-line ).
+      IF lv_up_src CS 'TEST'    OR lv_up_src CS 'TEMP'
+         OR lv_up_src CS 'TMP'  OR lv_up_src CS 'COPY'
+         OR lv_up_src CS 'OLD'  OR lv_up_src CS 'BAK'
+         OR lv_up_src CS 'UNUSED'    OR lv_up_src CS 'DELETE'
+         OR lv_up_src CS 'WORKAROUND' OR lv_up_src CS 'DO NOT USE'.
+        INSERT ls_hdr-progname INTO TABLE lt_noise.
+      ENDIF.
+    ENDLOOP.
+
+    " Name pattern check
+    LOOP AT lt_trdir INTO DATA(ls_nm_chk).
+      DATA(lv_pnm) = to_upper( ls_nm_chk-name ).
+      IF lv_pnm CS 'TEST' OR lv_pnm CS 'TEMP' OR lv_pnm CS 'TMP'
+         OR lv_pnm CS 'COPY' OR lv_pnm CS 'OLD'
+         OR lv_pnm CS 'BAK'  OR lv_pnm CS 'DEL'.
+        INSERT ls_nm_chk-name INTO TABLE lt_noise.
+      ENDIF.
+    ENDLOOP.
+
+    " Description keyword check
+    LOOP AT lt_desc INTO DATA(ls_dc_chk).
+      DATA(lv_dtxt) = to_upper( ls_dc_chk-title ).
+      IF lv_dtxt CS 'TEST'   OR lv_dtxt CS 'TEMP'
+         OR lv_dtxt CS 'COPY'    OR lv_dtxt CS 'OLD'
+         OR lv_dtxt CS 'UNUSED'  OR lv_dtxt CS 'DELETE'
+         OR lv_dtxt CS 'WORKAROUND'.
+        INSERT ls_dc_chk-name INTO TABLE lt_noise.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  " --- Input/Output detection (comment lines excluded) ---
+  SELECT DISTINCT progname
+    FROM reposrc
+    WHERE progname LIKE 'Z%'
+      AND line NOT LIKE '*%'
+      AND line NOT LIKE '"%'
+      AND ( line LIKE '%PARAMETERS%'
+         OR line LIKE '%SELECT-OPTIONS%'
+         OR line LIKE '%SELECTION-SCREEN%' )
+    INTO TABLE @lt_selscr.
+
+  SELECT DISTINCT progname
+    FROM reposrc
+    WHERE progname LIKE 'Z%'
+      AND line NOT LIKE '*%'
+      AND line NOT LIKE '"%'
+      AND line LIKE '%READ DATASET%'
+    INTO TABLE @lt_filein.
+
+  SELECT DISTINCT progname
+    FROM reposrc
+    WHERE progname LIKE 'Z%'
+      AND line NOT LIKE '*%'
+      AND line NOT LIKE '"%'
+      AND line LIKE '%WRITE%'
+    INTO TABLE @lt_write.
+
+  SELECT DISTINCT progname
+    FROM reposrc
+    WHERE progname LIKE 'Z%'
+      AND line NOT LIKE '*%'
+      AND line NOT LIKE '"%'
+      AND ( line LIKE '%CL_SALV_TABLE%'
+         OR line LIKE '%REUSE_ALV%' )
+    INTO TABLE @lt_alv.
+
+  SELECT DISTINCT progname
+    FROM reposrc
+    WHERE progname LIKE 'Z%'
+      AND line NOT LIKE '*%'
+      AND line NOT LIKE '"%'
+      AND line LIKE '%TRANSFER%'
+    INTO TABLE @lt_xfer.
+
 ENDFORM.
 
 *----------------------------------------------------------------------*
