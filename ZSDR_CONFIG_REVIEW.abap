@@ -88,6 +88,7 @@ TYPES:
     kappl     TYPE kappl,
     appl_txt  TYPE c LENGTH 20,
     kschl     TYPE kschl,
+    nacha     TYPE nacha,
     count     TYPE i,
   END OF ty_output,
 
@@ -365,21 +366,23 @@ FORM fetch_nace_output.
   TYPES: BEGIN OF ty_nach_raw,
            kappl TYPE kappl,
            kschl TYPE kschl,
+           nacha TYPE nacha,
            cnt   TYPE i,
          END OF ty_nach_raw.
 
   DATA lt_raw TYPE TABLE OF ty_nach_raw.
 
-  SELECT kappl, kschl, COUNT(*) AS cnt
+  SELECT kappl, kschl, nacha, COUNT(*) AS cnt
     FROM nach
     WHERE kappl IN ( 'V1', 'V2', 'V3' )
-    GROUP BY kappl, kschl
+    GROUP BY kappl, kschl, nacha
     INTO TABLE @lt_raw.
 
   LOOP AT lt_raw INTO DATA(ls_raw).
     APPEND VALUE ty_output(
       kappl    = ls_raw-kappl
       kschl    = ls_raw-kschl
+      nacha    = ls_raw-nacha
       count    = ls_raw-cnt
       appl_txt = SWITCH #( ls_raw-kappl
         WHEN 'V1' THEN 'Sales'
@@ -387,7 +390,7 @@ FORM fetch_nace_output.
         WHEN 'V3' THEN 'Billing' ) ) TO gt_output.
   ENDLOOP.
 
-  SORT gt_output BY kappl kschl count DESCENDING.
+  SORT gt_output BY kappl kschl nacha.
 ENDFORM.
 
 *----------------------------------------------------------------------*
