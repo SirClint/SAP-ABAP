@@ -22,21 +22,25 @@
 *&   5. Transactional Summary  - Order count and net value by
 *&                               (auart, vkorg) aggregated across
 *&                               the selected date range
-*&   6. Billing Volume         - Billing doc count by billing type
-*&                               and sales area from VBRK GROUP BY
-*&                               — no VBRP/VBAK join
+*&   6. Document Flow          - Order-type to billing-type paths via
+*&                               VBRK->VBRP->VBAK join (VBRP-AUBEL)
+*&   7. Z Program Inventory   - All Z programs: metadata, last spool,
+*&                               input/output type from source scan;
+*&                               noise filter suppresses test/temp code
 *&
 *& Inputs
 *&   s_vkorg  - sales org filter (Distribution Channel and Division
 *&              are hardcoded to '01' — always constant in this system)
 *&   s_auart  - order-type filter
 *&   s_erdat  - date range (default: last 180 days; required for billing/trans views)
+*&   p_noise  - Exclude suspected noise programs (default: checked)
 *&
 *& Tables read (READ-ONLY; no UPDATE / INSERT / MODIFY / DELETE /
 *& COMMIT against any database table — internal-table DELETE
 *& ADJACENT DUPLICATES is the only DELETE in the program):
 *&   Config:  TVAK, TVAKT, T184, TVAPT, TVFK, TVFKT
 *&   Trans:   VBAK, VBRK, NACH
+*&   Catalog: TRDIR, TRDIRT, TADIR, REPOSRC, TSP01
 *&
 *& Output
 *&   Object-oriented ALV display via CL_SALV_TABLE. The selection
@@ -681,6 +685,91 @@ FORM fetch_zprog.
       AND line LIKE '%TRANSFER%'
     INTO TABLE @lt_xfer.
 
+  " --- Assembly loop ---
+  lv_total = lines( lt_trdir ).
+  lv_idx   = 0.
+
+  LOOP AT lt_trdir INTO DATA(ls_prog).
+    lv_idx = lv_idx + 1.
+    lv_pct = ( lv_idx * 100 ) / lv_total.
+
+    CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+      EXPORTING
+        percentage = lv_pct
+        text       = |Analyzing program { lv_idx } of { lv_total }...|.
+
+    " Skip noise programs when filter is active
+    IF p_noise = abap_true.
+      READ TABLE lt_noise WITH TABLE KEY table_line = ls_prog-name
+        TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0. CONTINUE. ENDIF.
+    ENDIF.
+
+    DATA(ls_row) = VALUE ty_zprog(
+      progname  = ls_prog-name
+      cnam      = ls_prog-cnam
+      cdat      = ls_prog-cdat
+      udat      = ls_prog-udat
+      prog_type = SWITCH #( ls_prog-subc
+        WHEN '1' THEN 'Executable'
+        WHEN 'F' THEN 'Function Group'
+        WHEN 'I' THEN 'Include'
+        WHEN 'K' THEN 'Class'
+        WHEN 'M' THEN 'Module Pool'
+        WHEN 'S' THEN 'Subroutine Pool'
+        ELSE ls_prog-subc ) ).
+
+    READ TABLE lt_desc  WITH TABLE KEY name     = ls_prog-name INTO DATA(ls_d).
+    IF sy-subrc = 0. ls_row-prog_txt   = ls_d-title.     ENDIF.
+
+    READ TABLE lt_pkg   WITH TABLE KEY obj_name = ls_prog-name INTO DATA(ls_p).
+    IF sy-subrc = 0. ls_row-devclass   = ls_p-devclass.  ENDIF.
+
+    READ TABLE lt_spool WITH TABLE KEY rqpnm    = ls_prog-name INTO DATA(ls_sp).
+    IF sy-subrc = 0. ls_row-last_spool = ls_sp-last_date. ENDIF.
+
+    " Input type
+    lv_has_selscr = abap_false.
+    lv_has_filein = abap_false.
+    READ TABLE lt_selscr WITH TABLE KEY table_line = ls_prog-name
+      TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0. lv_has_selscr = abap_true. ENDIF.
+    READ TABLE lt_filein WITH TABLE KEY table_line = ls_prog-name
+      TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0. lv_has_filein = abap_true. ENDIF.
+
+    IF lv_has_selscr = abap_true AND lv_has_filein = abap_true.
+      ls_row-input_type = 'Sel.Screen+File'.
+    ELSEIF lv_has_selscr = abap_true.
+      ls_row-input_type = 'Sel.Screen'.
+    ELSEIF lv_has_filein = abap_true.
+      ls_row-input_type = 'File'.
+    ENDIF.
+
+    " Output type — build concatenated label
+    lv_out = ''.
+    lv_sep = ''.
+    READ TABLE lt_write WITH TABLE KEY table_line = ls_prog-name
+      TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      lv_out = |{ lv_out }{ lv_sep }Print|.  lv_sep = '+'.
+    ENDIF.
+    READ TABLE lt_alv WITH TABLE KEY table_line = ls_prog-name
+      TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      lv_out = |{ lv_out }{ lv_sep }ALV|.    lv_sep = '+'.
+    ENDIF.
+    READ TABLE lt_xfer WITH TABLE KEY table_line = ls_prog-name
+      TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      lv_out = |{ lv_out }{ lv_sep }File|.
+    ENDIF.
+    ls_row-output_type = lv_out.
+
+    APPEND ls_row TO gt_zprog.
+  ENDLOOP.
+
+  SORT gt_zprog BY devclass progname.
 ENDFORM.
 
 *----------------------------------------------------------------------*
