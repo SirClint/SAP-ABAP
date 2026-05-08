@@ -88,7 +88,7 @@ TYPES:
     kappl     TYPE kappl,
     appl_txt  TYPE c LENGTH 20,
     kschl     TYPE kschl,
-    nacha     TYPE c LENGTH 1,
+    medium    TYPE c LENGTH 12,
     count     TYPE i,
   END OF ty_output,
 
@@ -382,7 +382,16 @@ FORM fetch_nace_output.
     APPEND VALUE ty_output(
       kappl    = ls_raw-kappl
       kschl    = ls_raw-kschl
-      nacha    = ls_raw-nacha
+      medium   = SWITCH #( ls_raw-nacha
+        WHEN '1' THEN 'Print'
+        WHEN '2' THEN 'Fax'
+        WHEN '3' THEN 'Telex'
+        WHEN '5' THEN 'Ext. Send'
+        WHEN '6' THEN 'EDI'
+        WHEN '7' THEN 'Simple Mail'
+        WHEN '8' THEN 'Special'
+        WHEN 'A' THEN 'Events'
+        ELSE ls_raw-nacha )
       count    = ls_raw-cnt
       appl_txt = SWITCH #( ls_raw-kappl
         WHEN 'V1' THEN 'Sales'
@@ -390,7 +399,7 @@ FORM fetch_nace_output.
         WHEN 'V3' THEN 'Billing' ) ) TO gt_output.
   ENDLOOP.
 
-  SORT gt_output BY kappl kschl nacha.
+  SORT gt_output BY kappl kschl medium.
 ENDFORM.
 
 *----------------------------------------------------------------------*
