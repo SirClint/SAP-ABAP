@@ -100,11 +100,13 @@ TYPES:
     net_val TYPE netwr,
   END OF ty_trans_summary,
 
-  " --- Billing Volume ---
+  " --- Document Flow ---
   BEGIN OF ty_doc_flow,
+    vkorg     TYPE vkorg,
+    auart     TYPE auart,
+    auart_txt TYPE text30,
     fkart     TYPE fkart,
     fkart_txt TYPE text30,
-    vkorg     TYPE vkorg,
     bill_cnt  TYPE i,
   END OF ty_doc_flow.
 
@@ -412,50 +414,71 @@ ENDFORM.
 
 *----------------------------------------------------------------------*
 * FORM: FETCH_DOC_FLOW
-* Billing volume by billing type and sales area.
-* Pure VBRK GROUP BY + TVFKT description lookup — no VBRP/VBAK join,
-* uses VKORG index, returns quickly on any data volume.
+* Shows order-type to billing-type document flow paths.
+* VBRK->VBRP->VBAK join via VBRP-AUBEL (billing item back-reference).
+* COUNT DISTINCT on billing doc avoids inflating multi-item invoices.
+* Capped by p_maxrec; date filter on VBRK-FKDAT limits VBRP rows read.
 *----------------------------------------------------------------------*
 FORM fetch_doc_flow.
-  TYPES: BEGIN OF ty_fkart_cnt,
+  TYPES: BEGIN OF ty_raw,
+           auart    TYPE auart,
+           fkart    TYPE fkart,
+           vkorg    TYPE vkorg,
+           bill_cnt TYPE i,
+         END OF ty_raw,
+         BEGIN OF ty_tvakt,
+           auart TYPE auart,
+           bezei TYPE text30,
+         END OF ty_tvakt,
+         BEGIN OF ty_tvfkt,
            fkart TYPE fkart,
-           vkorg TYPE vkorg,
-           cnt   TYPE i,
-         END OF ty_fkart_cnt.
+           vtext TYPE text30,
+         END OF ty_tvfkt.
 
-  DATA: lt_raw   TYPE TABLE OF ty_fkart_cnt,
-        lt_tvfkt TYPE HASHED TABLE OF ty_bill_types WITH UNIQUE KEY fkart.
+  DATA: lt_raw   TYPE TABLE OF ty_raw,
+        lt_tvakt TYPE HASHED TABLE OF ty_tvakt WITH UNIQUE KEY auart,
+        lt_tvfkt TYPE HASHED TABLE OF ty_tvfkt WITH UNIQUE KEY fkart.
 
-  SELECT fkart, vkorg, COUNT(*) AS cnt
-    FROM vbrk
-    WHERE vkorg IN @s_vkorg
-      AND vtweg = '01'
-      AND spart = '01'
-      AND fkdat IN @s_erdat
-    GROUP BY fkart, vkorg
+  SELECT k~auart, r~fkart, r~vkorg,
+         COUNT( DISTINCT r~vbeln ) AS bill_cnt
+    FROM vbrk AS r
+    INNER JOIN vbrp AS p ON p~vbeln = r~vbeln
+    INNER JOIN vbak AS k ON k~vbeln = p~aubel
+    WHERE r~vkorg IN @s_vkorg
+      AND r~fkdat IN @s_erdat
+      AND k~auart IN @s_auart
+    GROUP BY k~auart, r~fkart, r~vkorg
+    UP TO @p_maxrec ROWS
     INTO TABLE @lt_raw.
 
   IF lt_raw IS INITIAL.
     RETURN.
   ENDIF.
 
+  SELECT auart, bezei
+    FROM tvakt
+    WHERE spras = @sy-langu
+    INTO TABLE @lt_tvakt.
+
   SELECT fkart, vtext
     FROM tvfkt
     WHERE spras = @sy-langu
-    INTO CORRESPONDING FIELDS OF TABLE @lt_tvfkt.
+    INTO TABLE @lt_tvfkt.
 
   LOOP AT lt_raw INTO DATA(ls_raw).
     DATA(ls_flow) = VALUE ty_doc_flow(
-      fkart    = ls_raw-fkart
       vkorg    = ls_raw-vkorg
-      bill_cnt = ls_raw-cnt ).
-    READ TABLE lt_tvfkt WITH TABLE KEY fkart = ls_raw-fkart
-      INTO DATA(ls_ft).
+      auart    = ls_raw-auart
+      fkart    = ls_raw-fkart
+      bill_cnt = ls_raw-bill_cnt ).
+    READ TABLE lt_tvakt WITH TABLE KEY auart = ls_raw-auart INTO DATA(ls_ak).
+    IF sy-subrc = 0. ls_flow-auart_txt = ls_ak-bezei. ENDIF.
+    READ TABLE lt_tvfkt WITH TABLE KEY fkart = ls_raw-fkart INTO DATA(ls_ft).
     IF sy-subrc = 0. ls_flow-fkart_txt = ls_ft-vtext. ENDIF.
     APPEND ls_flow TO gt_doc_flow.
   ENDLOOP.
 
-  SORT gt_doc_flow BY fkart vkorg.
+  SORT gt_doc_flow BY vkorg auart bill_cnt DESCENDING.
 ENDFORM.
 
 *----------------------------------------------------------------------*
@@ -502,7 +525,7 @@ FORM display_alv.
             CHANGING  t_table      = gt_trans_summary ).
 
         WHEN r_dflow.
-          lv_title = 'Billing Volume by Type and Sales Area'.
+          lv_title = 'Order to Invoice Document Flow'.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_doc_flow ).
