@@ -30,7 +30,7 @@
 *&   s_vkorg  - sales org filter (Distribution Channel and Division
 *&              are hardcoded to '01' — always constant in this system)
 *&   s_auart  - order-type filter
-*&   s_erdat  - date range (default: last 365 days)
+*&   s_erdat  - date range (default: last 180 days; required for billing/trans views)
 *&
 *& Tables read (READ-ONLY; no UPDATE / INSERT / MODIFY / DELETE /
 *& COMMIT against any database table — internal-table DELETE
@@ -162,7 +162,7 @@ SELECTION-SCREEN END OF BLOCK b3.
 INITIALIZATION.
   s_erdat-sign   = 'I'.
   s_erdat-option = 'BT'.
-  s_erdat-low    = sy-datum - 365.
+  s_erdat-low    = sy-datum - 180.
   s_erdat-high   = sy-datum.
   APPEND s_erdat TO s_erdat[].
 
@@ -172,7 +172,7 @@ INITIALIZATION.
 AT SELECTION-SCREEN.
   IF s_erdat[] IS INITIAL AND
      ( r_biltyp = abap_true OR r_trans = abap_true OR r_dflow = abap_true ).
-    MESSAGE w398(00) WITH 'No date range — this view may run long on large systems'.
+    MESSAGE e398(00) WITH 'Date range is required for this view'.
   ENDIF.
 
 *----------------------------------------------------------------------*
