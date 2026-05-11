@@ -119,14 +119,14 @@ TYPES:
   BEGIN OF ty_zprog,
     progname    TYPE c LENGTH 40,
     prog_txt    TYPE c LENGTH 60,
-    devclass    TYPE c LENGTH 30,
     prog_type   TYPE c LENGTH 16,
+    has_tcode   TYPE c LENGTH 1,
+    devclass    TYPE c LENGTH 30,
+    input_type  TYPE c LENGTH 20,
+    output_type TYPE c LENGTH 20,
     cnam        TYPE c LENGTH 12,
     cdat        TYPE d,
     udat        TYPE d,
-    last_spool  TYPE d,
-    input_type  TYPE c LENGTH 20,
-    output_type TYPE c LENGTH 20,
   END OF ty_zprog.
 
 *----------------------------------------------------------------------*
@@ -560,6 +560,7 @@ FORM fetch_zprog.
         lt_desc    TYPE HASHED TABLE OF ty_desc  WITH UNIQUE KEY name,
         lt_pkg     TYPE HASHED TABLE OF ty_pkg   WITH UNIQUE KEY obj_name,
         lt_spool   TYPE HASHED TABLE OF ty_spool WITH UNIQUE KEY rqpnm,
+        lt_tcode   TYPE HASHED TABLE OF ty_name40 WITH UNIQUE KEY table_line,
         lt_all_src TYPE TABLE OF ty_reposrc_row,
         lt_noise   TYPE HASHED TABLE OF ty_name40 WITH UNIQUE KEY table_line,
         lt_selscr TYPE ty_name_set,
@@ -579,6 +580,7 @@ FORM fetch_zprog.
   SELECT name, subc, cnam, cdat, udat
     FROM trdir
     WHERE name LIKE 'Z%'
+      AND subc <> 'I'
     INTO TABLE @lt_trdir.
 
   IF lt_trdir IS INITIAL.
@@ -600,8 +602,14 @@ FORM fetch_zprog.
       AND obj_name LIKE 'Z%'
     INTO TABLE @lt_pkg.
 
-  " 4. Last spool date — TSP01 rejects field references at syntax check on this system;
-  "    lt_spool stays empty and last_spool column will show blank.
+  " 4. Transaction codes — programs with a tcode are confirmed production programs
+  SELECT DISTINCT pgmna
+    FROM tstc
+    WHERE pgmna LIKE 'Z%'
+    INTO TABLE @DATA(lt_tstc_raw).
+  LOOP AT lt_tstc_raw INTO DATA(ls_tc).
+    INSERT ls_tc-pgmna INTO TABLE lt_tcode.
+  ENDLOOP.
 
   " --- Noise detection: name and description checks (no REPOSRC needed) ---
   IF p_noise = 'X'.
@@ -704,10 +712,11 @@ FORM fetch_zprog.
     IF sy-subrc = 0. ls_row-prog_txt   = ls_d-descript.  ENDIF.
 
     READ TABLE lt_pkg   WITH TABLE KEY obj_name = ls_prog-name INTO DATA(ls_p).
-    IF sy-subrc = 0. ls_row-devclass   = ls_p-devclass.  ENDIF.
+    IF sy-subrc = 0. ls_row-devclass  = ls_p-devclass. ENDIF.
 
-    READ TABLE lt_spool WITH TABLE KEY rqpnm    = ls_prog-name INTO DATA(ls_sp).
-    IF sy-subrc = 0. ls_row-last_spool = ls_sp-last_date. ENDIF.
+    READ TABLE lt_tcode WITH TABLE KEY table_line = ls_prog-name
+      TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0. ls_row-has_tcode = 'X'. ENDIF.
 
     " Input type
     lv_has_selscr = ''.
@@ -807,6 +816,17 @@ FORM display_alv.
           cl_salv_table=>factory(
             IMPORTING r_salv_table = lo_alv
             CHANGING  t_table      = gt_zprog ).
+          DATA(lo_zc) = lo_alv->get_columns( ).
+          lo_zc->get_column( 'PROGNAME'    )->set_long_text( 'Program Name' ).
+          lo_zc->get_column( 'PROG_TXT'    )->set_long_text( 'Description' ).
+          lo_zc->get_column( 'PROG_TYPE'   )->set_long_text( 'Program Type' ).
+          lo_zc->get_column( 'HAS_TCODE'   )->set_long_text( 'Has TCode' ).
+          lo_zc->get_column( 'DEVCLASS'    )->set_long_text( 'Package' ).
+          lo_zc->get_column( 'INPUT_TYPE'  )->set_long_text( 'Input' ).
+          lo_zc->get_column( 'OUTPUT_TYPE' )->set_long_text( 'Output' ).
+          lo_zc->get_column( 'CNAM'        )->set_long_text( 'Created By' ).
+          lo_zc->get_column( 'CDAT'        )->set_long_text( 'Created On' ).
+          lo_zc->get_column( 'UDAT'        )->set_long_text( 'Changed On' ).
       ENDCASE.
 
       lo_alv->get_display_settings( )->set_list_header( lv_title ).
