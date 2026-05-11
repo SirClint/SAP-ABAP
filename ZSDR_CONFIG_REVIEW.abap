@@ -643,49 +643,32 @@ FORM fetch_zprog.
     ENDLOOP.
   ENDIF.
 
-  " --- Input/Output detection (comment lines excluded) ---
-  SELECT DISTINCT progname
+  " --- Input/Output detection (comment lines excluded, single REPOSRC pass) ---
+  SELECT *
     FROM reposrc
     WHERE progname LIKE 'Z%'
       AND line NOT LIKE '*%'
       AND line NOT LIKE '"%'
-      AND ( line LIKE '%PARAMETERS%'
-         OR line LIKE '%SELECT-OPTIONS%'
-         OR line LIKE '%SELECTION-SCREEN%' )
-    INTO TABLE @lt_selscr.
+    INTO TABLE @DATA(lt_exec_lines).
 
-  SELECT DISTINCT progname
-    FROM reposrc
-    WHERE progname LIKE 'Z%'
-      AND line NOT LIKE '*%'
-      AND line NOT LIKE '"%'
-      AND line LIKE '%READ DATASET%'
-    INTO TABLE @lt_filein.
-
-  SELECT DISTINCT progname
-    FROM reposrc
-    WHERE progname LIKE 'Z%'
-      AND line NOT LIKE '*%'
-      AND line NOT LIKE '"%'
-      AND line LIKE '%WRITE%'
-    INTO TABLE @lt_write.
-
-  SELECT DISTINCT progname
-    FROM reposrc
-    WHERE progname LIKE 'Z%'
-      AND line NOT LIKE '*%'
-      AND line NOT LIKE '"%'
-      AND ( line LIKE '%CL_SALV_TABLE%'
-         OR line LIKE '%REUSE_ALV%' )
-    INTO TABLE @lt_alv.
-
-  SELECT DISTINCT progname
-    FROM reposrc
-    WHERE progname LIKE 'Z%'
-      AND line NOT LIKE '*%'
-      AND line NOT LIKE '"%'
-      AND line LIKE '%TRANSFER%'
-    INTO TABLE @lt_xfer.
+  LOOP AT lt_exec_lines INTO DATA(ls_exec).
+    IF ls_exec-line CS 'PARAMETERS' OR ls_exec-line CS 'SELECT-OPTIONS'
+       OR ls_exec-line CS 'SELECTION-SCREEN'.
+      INSERT ls_exec-progname INTO TABLE lt_selscr.
+    ENDIF.
+    IF ls_exec-line CS 'READ DATASET'.
+      INSERT ls_exec-progname INTO TABLE lt_filein.
+    ENDIF.
+    IF ls_exec-line CS 'WRITE'.
+      INSERT ls_exec-progname INTO TABLE lt_write.
+    ENDIF.
+    IF ls_exec-line CS 'CL_SALV_TABLE' OR ls_exec-line CS 'REUSE_ALV'.
+      INSERT ls_exec-progname INTO TABLE lt_alv.
+    ENDIF.
+    IF ls_exec-line CS 'TRANSFER'.
+      INSERT ls_exec-progname INTO TABLE lt_xfer.
+    ENDIF.
+  ENDLOOP.
 
   " --- Assembly loop ---
   lv_total = lines( lt_trdir ).
