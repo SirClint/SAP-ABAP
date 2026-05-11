@@ -535,9 +535,9 @@ FORM fetch_zprog.
            udat TYPE d,
          END OF ty_trdir_row,
          BEGIN OF ty_desc,
-           name   TYPE c LENGTH 40,
-           sprsl  TYPE c LENGTH 1,
-           title  TYPE c LENGTH 60,
+           name    TYPE c LENGTH 40,
+           sprsl   TYPE c LENGTH 1,
+           descript TYPE c LENGTH 60,
          END OF ty_desc,
          BEGIN OF ty_pkg,
            obj_name TYPE c LENGTH 40,
@@ -615,7 +615,7 @@ FORM fetch_zprog.
     ENDLOOP.
 
     LOOP AT lt_desc INTO DATA(ls_dc_chk).
-      DATA(lv_dtxt) = to_upper( ls_dc_chk-title ).
+      DATA(lv_dtxt) = to_upper( ls_dc_chk-descript ).
       IF lv_dtxt CS 'TEST'   OR lv_dtxt CS 'TEMP'
          OR lv_dtxt CS 'COPY'    OR lv_dtxt CS 'OLD'
          OR lv_dtxt CS 'UNUSED'  OR lv_dtxt CS 'DELETE'
@@ -701,7 +701,7 @@ FORM fetch_zprog.
         ELSE ls_prog-subc ) ).
 
     READ TABLE lt_desc  WITH TABLE KEY name     = ls_prog-name INTO DATA(ls_d).
-    IF sy-subrc = 0. ls_row-prog_txt   = ls_d-title.     ENDIF.
+    IF sy-subrc = 0. ls_row-prog_txt   = ls_d-descript.  ENDIF.
 
     READ TABLE lt_pkg   WITH TABLE KEY obj_name = ls_prog-name INTO DATA(ls_p).
     IF sy-subrc = 0. ls_row-devclass   = ls_p-devclass.  ENDIF.
