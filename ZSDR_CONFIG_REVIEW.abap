@@ -547,15 +547,21 @@ FORM fetch_zprog.
            rqpnm     TYPE c LENGTH 40,
            last_date TYPE d,
          END OF ty_spool,
+         BEGIN OF ty_reposrc_row,
+           progname TYPE c LENGTH 40,
+           zeile    TYPE i,
+           line     TYPE c LENGTH 255,
+         END OF ty_reposrc_row,
          ty_name40   TYPE c LENGTH 40,
          ty_name_set TYPE HASHED TABLE OF ty_name40
                      WITH UNIQUE KEY table_line.
 
-  DATA: lt_trdir  TYPE TABLE OF ty_trdir_row,
-        lt_desc   TYPE HASHED TABLE OF ty_desc  WITH UNIQUE KEY name,
-        lt_pkg    TYPE HASHED TABLE OF ty_pkg   WITH UNIQUE KEY obj_name,
-        lt_spool  TYPE HASHED TABLE OF ty_spool WITH UNIQUE KEY rqpnm,
-        lt_noise  TYPE HASHED TABLE OF ty_name40 WITH UNIQUE KEY table_line,
+  DATA: lt_trdir   TYPE TABLE OF ty_trdir_row,
+        lt_desc    TYPE HASHED TABLE OF ty_desc  WITH UNIQUE KEY name,
+        lt_pkg     TYPE HASHED TABLE OF ty_pkg   WITH UNIQUE KEY obj_name,
+        lt_spool   TYPE HASHED TABLE OF ty_spool WITH UNIQUE KEY rqpnm,
+        lt_all_src TYPE TABLE OF ty_reposrc_row,
+        lt_noise   TYPE HASHED TABLE OF ty_name40 WITH UNIQUE KEY table_line,
         lt_selscr TYPE ty_name_set,
         lt_filein TYPE ty_name_set,
         lt_write  TYPE ty_name_set,
@@ -624,7 +630,7 @@ FORM fetch_zprog.
   SELECT *
     FROM reposrc
     WHERE progname LIKE 'Z%'
-    INTO TABLE @DATA(lt_all_src).
+    INTO CORRESPONDING FIELDS OF TABLE @lt_all_src.
 
   LOOP AT lt_all_src INTO DATA(ls_src).
     DATA(lv_src_up) = to_upper( ls_src-line ).
