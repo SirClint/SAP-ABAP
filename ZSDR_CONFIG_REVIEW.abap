@@ -597,27 +597,8 @@ FORM fetch_zprog.
   " 4. Last spool date — TSP01 rejects field references at syntax check on this system;
   "    lt_spool stays empty and last_spool column will show blank.
 
-  " --- Noise detection ---
-  " Header scan includes comment lines — '* TEST PROGRAM' is a noise signal
+  " --- Noise detection: name and description checks (no REPOSRC needed) ---
   IF p_noise = 'X'.
-    SELECT *
-      FROM reposrc
-      WHERE progname LIKE 'Z%'
-        AND zeile    <= 20
-      INTO TABLE @DATA(lt_hdr_lines).
-
-    LOOP AT lt_hdr_lines INTO DATA(ls_hdr).
-      DATA(lv_up_src) = to_upper( ls_hdr-line ).
-      IF lv_up_src CS 'TEST'    OR lv_up_src CS 'TEMP'
-         OR lv_up_src CS 'TMP'  OR lv_up_src CS 'COPY'
-         OR lv_up_src CS 'OLD'  OR lv_up_src CS 'BAK'
-         OR lv_up_src CS 'UNUSED'    OR lv_up_src CS 'DELETE'
-         OR lv_up_src CS 'WORKAROUND' OR lv_up_src CS 'DO NOT USE'.
-        INSERT ls_hdr-progname INTO TABLE lt_noise.
-      ENDIF.
-    ENDLOOP.
-
-    " Name pattern check
     LOOP AT lt_trdir INTO DATA(ls_nm_chk).
       DATA(lv_pnm) = to_upper( ls_nm_chk-name ).
       IF lv_pnm CS 'TEST' OR lv_pnm CS 'TEMP' OR lv_pnm CS 'TMP'
@@ -627,7 +608,6 @@ FORM fetch_zprog.
       ENDIF.
     ENDLOOP.
 
-    " Description keyword check
     LOOP AT lt_desc INTO DATA(ls_dc_chk).
       DATA(lv_dtxt) = to_upper( ls_dc_chk-title ).
       IF lv_dtxt CS 'TEST'   OR lv_dtxt CS 'TEMP'
@@ -639,30 +619,44 @@ FORM fetch_zprog.
     ENDLOOP.
   ENDIF.
 
-  " --- Input/Output detection (comment lines excluded, single REPOSRC pass) ---
+  " --- Single REPOSRC pass: header noise scan + input/output detection ---
+  " REPOSRC rejects non-key field references in WHERE; all filtering done in ABAP.
   SELECT *
     FROM reposrc
     WHERE progname LIKE 'Z%'
-      AND line NOT LIKE '*%'
-      AND line NOT LIKE '"%'
-    INTO TABLE @DATA(lt_exec_lines).
+    INTO TABLE @DATA(lt_all_src).
 
-  LOOP AT lt_exec_lines INTO DATA(ls_exec).
-    IF ls_exec-line CS 'PARAMETERS' OR ls_exec-line CS 'SELECT-OPTIONS'
-       OR ls_exec-line CS 'SELECTION-SCREEN'.
-      INSERT ls_exec-progname INTO TABLE lt_selscr.
+  LOOP AT lt_all_src INTO DATA(ls_src).
+    DATA(lv_src_up) = to_upper( ls_src-line ).
+
+    " Header noise scan — first 20 lines, including comment lines
+    IF p_noise = 'X' AND ls_src-zeile <= 20.
+      IF lv_src_up CS 'TEST'    OR lv_src_up CS 'TEMP'
+         OR lv_src_up CS 'TMP'  OR lv_src_up CS 'COPY'
+         OR lv_src_up CS 'OLD'  OR lv_src_up CS 'BAK'
+         OR lv_src_up CS 'UNUSED'    OR lv_src_up CS 'DELETE'
+         OR lv_src_up CS 'WORKAROUND' OR lv_src_up CS 'DO NOT USE'.
+        INSERT ls_src-progname INTO TABLE lt_noise.
+      ENDIF.
     ENDIF.
-    IF ls_exec-line CS 'READ DATASET'.
-      INSERT ls_exec-progname INTO TABLE lt_filein.
+
+    " IO detection — skip comment lines
+    IF ls_src-line(1) = '*' OR ls_src-line(1) = '"'. CONTINUE. ENDIF.
+    IF lv_src_up CS 'PARAMETERS' OR lv_src_up CS 'SELECT-OPTIONS'
+       OR lv_src_up CS 'SELECTION-SCREEN'.
+      INSERT ls_src-progname INTO TABLE lt_selscr.
     ENDIF.
-    IF ls_exec-line CS 'WRITE'.
-      INSERT ls_exec-progname INTO TABLE lt_write.
+    IF lv_src_up CS 'READ DATASET'.
+      INSERT ls_src-progname INTO TABLE lt_filein.
     ENDIF.
-    IF ls_exec-line CS 'CL_SALV_TABLE' OR ls_exec-line CS 'REUSE_ALV'.
-      INSERT ls_exec-progname INTO TABLE lt_alv.
+    IF lv_src_up CS 'WRITE'.
+      INSERT ls_src-progname INTO TABLE lt_write.
     ENDIF.
-    IF ls_exec-line CS 'TRANSFER'.
-      INSERT ls_exec-progname INTO TABLE lt_xfer.
+    IF lv_src_up CS 'CL_SALV_TABLE' OR lv_src_up CS 'REUSE_ALV'.
+      INSERT ls_src-progname INTO TABLE lt_alv.
+    ENDIF.
+    IF lv_src_up CS 'TRANSFER'.
+      INSERT ls_src-progname INTO TABLE lt_xfer.
     ENDIF.
   ENDLOOP.
 
