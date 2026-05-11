@@ -594,24 +594,8 @@ FORM fetch_zprog.
       AND obj_name LIKE 'Z%'
     INTO TABLE @lt_pkg.
 
-  " 4. Last spool date per program — SELECT * avoids field-list restriction on TSP01
-  SELECT *
-    FROM tsp01
-    WHERE rqpnm LIKE 'Z%'
-    INTO TABLE @DATA(lt_tsp01_raw).
-
-  LOOP AT lt_tsp01_raw INTO DATA(ls_tsp).
-    READ TABLE lt_spool WITH TABLE KEY rqpnm = ls_tsp-rqpnm
-      ASSIGNING FIELD-SYMBOL(<fs_sp>).
-    IF sy-subrc = 0.
-      IF ls_tsp-rqcrdat > <fs_sp>-last_date.
-        <fs_sp>-last_date = ls_tsp-rqcrdat.
-      ENDIF.
-    ELSE.
-      INSERT VALUE ty_spool( rqpnm = ls_tsp-rqpnm last_date = ls_tsp-rqcrdat )
-        INTO TABLE lt_spool.
-    ENDIF.
-  ENDLOOP.
+  " 4. Last spool date — TSP01 rejects field references at syntax check on this system;
+  "    lt_spool stays empty and last_spool column will show blank.
 
   " --- Noise detection ---
   " Header scan includes comment lines — '* TEST PROGRAM' is a noise signal
