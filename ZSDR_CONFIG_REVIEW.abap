@@ -179,13 +179,13 @@ SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
 SELECTION-SCREEN END OF BLOCK b1.
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
-  PARAMETERS: r_order  RADIOBUTTON GROUP r1 DEFAULT 'X',
-              r_itmcat RADIOBUTTON GROUP r1,
-              r_biltyp RADIOBUTTON GROUP r1,
-              r_output RADIOBUTTON GROUP r1,
-              r_trans  RADIOBUTTON GROUP r1,
-              r_dflow  RADIOBUTTON GROUP r1,
-              r_zprog  RADIOBUTTON GROUP r1.
+  PARAMETERS: r_order  RADIOBUTTON GROUP r1 DEFAULT 'X' USER-COMMAND rsel,
+              r_itmcat RADIOBUTTON GROUP r1 USER-COMMAND rsel,
+              r_biltyp RADIOBUTTON GROUP r1 USER-COMMAND rsel,
+              r_output RADIOBUTTON GROUP r1 USER-COMMAND rsel,
+              r_trans  RADIOBUTTON GROUP r1 USER-COMMAND rsel,
+              r_dflow  RADIOBUTTON GROUP r1 USER-COMMAND rsel,
+              r_zprog  RADIOBUTTON GROUP r1 USER-COMMAND rsel.
   SELECTION-SCREEN BEGIN OF LINE.
     SELECTION-SCREEN COMMENT (35) gc_zpopt MODIF ID zpg.
   SELECTION-SCREEN END OF LINE.
@@ -242,7 +242,8 @@ AT SELECTION-SCREEN OUTPUT.
   ENDLOOP.
 
 AT SELECTION-SCREEN.
-  IF s_erdat[] IS INITIAL AND
+  IF sy-ucomm = 'ONLI' AND
+     s_erdat[] IS INITIAL AND
      ( r_biltyp = abap_true OR r_trans = abap_true OR r_dflow = abap_true ).
     MESSAGE e398(00) WITH 'Date range is required for this view'.
   ENDIF.
