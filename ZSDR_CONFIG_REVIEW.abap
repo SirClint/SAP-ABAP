@@ -233,9 +233,9 @@ AT SELECTION-SCREEN OUTPUT.
   LOOP AT SCREEN.
     IF screen-group1 = 'ZPG'.
       IF r_zprog = abap_true.
-        screen-active = 1.
+        screen-input = 1.
       ELSE.
-        screen-active = 0.
+        screen-input = 0.
       ENDIF.
       MODIFY SCREEN.
     ENDIF.
