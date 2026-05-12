@@ -142,19 +142,6 @@ DATA:
   gt_doc_flow      TYPE TABLE OF ty_doc_flow,
   gt_zprog         TYPE TABLE OF ty_zprog.
 
-*----------------------------------------------------------------------*
-* SELECTION SCREEN LABEL CONSTANTS
-* Used by SELECTION-SCREEN COMMENT for Z Program Options sub-panel.
-*----------------------------------------------------------------------*
-DATA:
-  gc_zpopt TYPE c LENGTH 35 VALUE 'Z Program Options:',
-  gc_noise TYPE c LENGTH 25 VALUE 'Exclude Noise Programs',
-  gc_types TYPE c LENGTH 15 VALUE 'Types:',
-  gc_exec  TYPE c LENGTH 11 VALUE 'Executable',
-  gc_fgrp  TYPE c LENGTH 11 VALUE 'Func.Group',
-  gc_mpol  TYPE c LENGTH 11 VALUE 'Module Pool',
-  gc_clas  TYPE c LENGTH 7  VALUE 'Class',
-  gc_subs  TYPE c LENGTH 10 VALUE 'Subr.Pool'.
 
 *----------------------------------------------------------------------*
 * SELECTION SCREEN
@@ -225,6 +212,14 @@ SELECTION-SCREEN END OF BLOCK b3.
 * INITIALIZATION
 *----------------------------------------------------------------------*
 INITIALIZATION.
+  gc_zpopt = 'Z Program Options:'.
+  gc_noise = 'Exclude Noise Programs'.
+  gc_types = 'Types:'.
+  gc_exec  = 'Executable'.
+  gc_fgrp  = 'Func.Group'.
+  gc_mpol  = 'Module Pool'.
+  gc_clas  = 'Class'.
+  gc_subs  = 'Subr.Pool'.
   s_erdat-sign   = 'I'.
   s_erdat-option = 'BT'.
   s_erdat-low    = sy-datum - 180.
