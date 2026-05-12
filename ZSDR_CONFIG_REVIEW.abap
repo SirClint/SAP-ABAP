@@ -180,12 +180,12 @@ SELECTION-SCREEN END OF BLOCK b1.
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
   PARAMETERS: r_order  RADIOBUTTON GROUP r1 DEFAULT 'X' USER-COMMAND rsel,
-              r_itmcat RADIOBUTTON GROUP r1 USER-COMMAND rsel,
-              r_biltyp RADIOBUTTON GROUP r1 USER-COMMAND rsel,
-              r_output RADIOBUTTON GROUP r1 USER-COMMAND rsel,
-              r_trans  RADIOBUTTON GROUP r1 USER-COMMAND rsel,
-              r_dflow  RADIOBUTTON GROUP r1 USER-COMMAND rsel,
-              r_zprog  RADIOBUTTON GROUP r1 USER-COMMAND rsel.
+              r_itmcat RADIOBUTTON GROUP r1,
+              r_biltyp RADIOBUTTON GROUP r1,
+              r_output RADIOBUTTON GROUP r1,
+              r_trans  RADIOBUTTON GROUP r1,
+              r_dflow  RADIOBUTTON GROUP r1,
+              r_zprog  RADIOBUTTON GROUP r1.
   SELECTION-SCREEN BEGIN OF LINE.
     SELECTION-SCREEN COMMENT (35) gc_zpopt MODIF ID zpg.
   SELECTION-SCREEN END OF LINE.
