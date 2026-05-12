@@ -40,7 +40,7 @@
 *& ADJACENT DUPLICATES is the only DELETE in the program):
 *&   Config:  TVAK, TVAKT, T184, TVAPT, TVFK, TVFKT
 *&   Trans:   VBAK, VBRK, NACH
-*&   Catalog: TRDIR, TRDIRT, TADIR, REPOSRC, TSP01
+*&   Catalog: TRDIR, TRDIRT, TADIR, TSTC (READ REPORT for source scan)
 *&
 *& Output
 *&   Object-oriented ALV display via CL_SALV_TABLE. The selection
@@ -120,7 +120,7 @@ TYPES:
     progname    TYPE c LENGTH 40,
     prog_txt    TYPE c LENGTH 60,
     prog_type   TYPE c LENGTH 16,
-    has_tcode   TYPE c LENGTH 1,
+    tcode       TYPE c LENGTH 20,
     devclass    TYPE c LENGTH 30,
     input_type  TYPE c LENGTH 20,
     output_type TYPE c LENGTH 20,
@@ -522,7 +522,7 @@ ENDFORM.
 
 *----------------------------------------------------------------------*
 * FORM: FETCH_ZPROG
-* Inventories all Z programs using TRDIR, TRDIRT, TADIR, TSP01.
+* Inventories all Z programs using TRDIR, TRDIRT, TADIR, TSTC; READ REPORT for source scan.
 * REPOSRC scanned for noise flags and input/output patterns.
 * Progress shown via SAPGUI_PROGRESS_INDICATOR.
 *----------------------------------------------------------------------*
@@ -543,35 +543,28 @@ FORM fetch_zprog.
            obj_name TYPE c LENGTH 40,
            devclass TYPE c LENGTH 30,
          END OF ty_pkg,
-         BEGIN OF ty_spool,
-           rqpnm     TYPE c LENGTH 40,
-           last_date TYPE d,
-         END OF ty_spool,
-         BEGIN OF ty_reposrc_row,
-           progname TYPE c LENGTH 40,
-           zeile    TYPE i,
-           line     TYPE c LENGTH 255,
-         END OF ty_reposrc_row,
+         BEGIN OF ty_tcode_map,
+           pgmna TYPE c LENGTH 40,
+           tcode TYPE c LENGTH 20,
+         END OF ty_tcode_map,
          ty_name40   TYPE c LENGTH 40,
          ty_name_set TYPE HASHED TABLE OF ty_name40
-                     WITH UNIQUE KEY table_line.
+                     WITH UNIQUE KEY table_line,
+         ty_src_tab  TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
 
   DATA: lt_trdir   TYPE TABLE OF ty_trdir_row,
         lt_desc    TYPE HASHED TABLE OF ty_desc  WITH UNIQUE KEY name,
         lt_pkg     TYPE HASHED TABLE OF ty_pkg   WITH UNIQUE KEY obj_name,
-        lt_spool   TYPE HASHED TABLE OF ty_spool WITH UNIQUE KEY rqpnm,
-        lt_tcode   TYPE HASHED TABLE OF ty_name40 WITH UNIQUE KEY table_line,
-        lt_all_src TYPE TABLE OF ty_reposrc_row,
-        lt_noise   TYPE HASHED TABLE OF ty_name40 WITH UNIQUE KEY table_line,
-        lt_selscr TYPE ty_name_set,
-        lt_filein TYPE ty_name_set,
-        lt_write  TYPE ty_name_set,
-        lt_alv    TYPE ty_name_set,
-        lt_xfer   TYPE ty_name_set,
+        lt_tcode      TYPE HASHED TABLE OF ty_tcode_map WITH UNIQUE KEY pgmna,
+        lt_noise      TYPE HASHED TABLE OF ty_name40 WITH UNIQUE KEY table_line,
+        lt_src        TYPE ty_src_tab,
         lv_has_selscr TYPE c LENGTH 1,
         lv_has_filein TYPE c LENGTH 1,
-        lv_out    TYPE c LENGTH 20,
-        lv_sep    TYPE c LENGTH 1,
+        lv_has_write  TYPE c LENGTH 1,
+        lv_has_alv    TYPE c LENGTH 1,
+        lv_has_xfer   TYPE c LENGTH 1,
+        lv_out        TYPE c LENGTH 20,
+        lv_sep        TYPE c LENGTH 1,
         lv_total  TYPE i,
         lv_idx    TYPE i,
         lv_pct    TYPE i.
@@ -602,13 +595,14 @@ FORM fetch_zprog.
       AND obj_name LIKE 'Z%'
     INTO TABLE @lt_pkg.
 
-  " 4. Transaction codes — programs with a tcode are confirmed production programs
-  SELECT DISTINCT pgmna
+  " 4. Transaction codes — fetch tcode+program pairs
+  SELECT tcode, pgmna
     FROM tstc
     WHERE pgmna LIKE 'Z%'
     INTO TABLE @DATA(lt_tstc_raw).
   LOOP AT lt_tstc_raw INTO DATA(ls_tc).
-    INSERT ls_tc-pgmna INTO TABLE lt_tcode.
+    INSERT VALUE ty_tcode_map( pgmna = ls_tc-pgmna tcode = ls_tc-tcode )
+      INTO TABLE lt_tcode.
   ENDLOOP.
 
   " --- Noise detection: name and description checks (no REPOSRC needed) ---
@@ -633,46 +627,7 @@ FORM fetch_zprog.
     ENDLOOP.
   ENDIF.
 
-  " --- Single REPOSRC pass: header noise scan + input/output detection ---
-  " REPOSRC rejects non-key field references in WHERE; all filtering done in ABAP.
-  SELECT *
-    FROM reposrc
-    WHERE progname LIKE 'Z%'
-    INTO CORRESPONDING FIELDS OF TABLE @lt_all_src.
-
-  LOOP AT lt_all_src INTO DATA(ls_src).
-    DATA(lv_src_up) = to_upper( ls_src-line ).
-
-    " Header noise scan — first 20 lines, including comment lines
-    IF p_noise = 'X' AND ls_src-zeile <= 20.
-      IF lv_src_up CS 'TEST'    OR lv_src_up CS 'TEMP'
-         OR lv_src_up CS 'TMP'  OR lv_src_up CS 'COPY'
-         OR lv_src_up CS 'OLD'  OR lv_src_up CS 'BAK'
-         OR lv_src_up CS 'UNUSED'    OR lv_src_up CS 'DELETE'
-         OR lv_src_up CS 'WORKAROUND' OR lv_src_up CS 'DO NOT USE'.
-        INSERT ls_src-progname INTO TABLE lt_noise.
-      ENDIF.
-    ENDIF.
-
-    " IO detection — skip comment lines
-    IF ls_src-line(1) = '*' OR ls_src-line(1) = '"'. CONTINUE. ENDIF.
-    IF lv_src_up CS 'PARAMETERS' OR lv_src_up CS 'SELECT-OPTIONS'
-       OR lv_src_up CS 'SELECTION-SCREEN'.
-      INSERT ls_src-progname INTO TABLE lt_selscr.
-    ENDIF.
-    IF lv_src_up CS 'READ DATASET'.
-      INSERT ls_src-progname INTO TABLE lt_filein.
-    ENDIF.
-    IF lv_src_up CS 'WRITE'.
-      INSERT ls_src-progname INTO TABLE lt_write.
-    ENDIF.
-    IF lv_src_up CS 'CL_SALV_TABLE' OR lv_src_up CS 'REUSE_ALV'.
-      INSERT ls_src-progname INTO TABLE lt_alv.
-    ENDIF.
-    IF lv_src_up CS 'TRANSFER'.
-      INSERT ls_src-progname INTO TABLE lt_xfer.
-    ENDIF.
-  ENDLOOP.
+  " IO detection is done per-program in the assembly loop via READ REPORT.
 
   " --- Assembly loop ---
   lv_total = lines( lt_trdir ).
@@ -714,19 +669,24 @@ FORM fetch_zprog.
     READ TABLE lt_pkg   WITH TABLE KEY obj_name = ls_prog-name INTO DATA(ls_p).
     IF sy-subrc = 0. ls_row-devclass  = ls_p-devclass. ENDIF.
 
-    READ TABLE lt_tcode WITH TABLE KEY table_line = ls_prog-name
-      TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0. ls_row-has_tcode = 'X'. ENDIF.
+    READ TABLE lt_tcode WITH TABLE KEY pgmna = ls_prog-name INTO DATA(ls_tc2).
+    IF sy-subrc = 0. ls_row-tcode = ls_tc2-tcode. ENDIF.
 
-    " Input type
-    lv_has_selscr = ''.
-    lv_has_filein = ''.
-    READ TABLE lt_selscr WITH TABLE KEY table_line = ls_prog-name
-      TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0. lv_has_selscr = 'X'. ENDIF.
-    READ TABLE lt_filein WITH TABLE KEY table_line = ls_prog-name
-      TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0. lv_has_filein = 'X'. ENDIF.
+    " Source scan for input/output classification
+    CLEAR lt_src.
+    READ REPORT ls_prog-name INTO lt_src.
+    CLEAR: lv_has_selscr, lv_has_filein, lv_has_write, lv_has_alv, lv_has_xfer.
+    LOOP AT lt_src INTO DATA(lv_line).
+      IF lv_line IS INITIAL. CONTINUE. ENDIF.
+      DATA(lv_up) = to_upper( lv_line ).
+      IF lv_up(1) = '*' OR lv_up(1) = '"'. CONTINUE. ENDIF.
+      IF lv_up CS 'PARAMETERS' OR lv_up CS 'SELECT-OPTIONS'
+         OR lv_up CS 'SELECTION-SCREEN'. lv_has_selscr = 'X'. ENDIF.
+      IF lv_up CS 'READ DATASET'.        lv_has_filein = 'X'. ENDIF.
+      IF lv_up CS 'WRITE'.               lv_has_write  = 'X'. ENDIF.
+      IF lv_up CS 'CL_SALV_TABLE' OR lv_up CS 'REUSE_ALV'. lv_has_alv = 'X'. ENDIF.
+      IF lv_up CS 'TRANSFER'.            lv_has_xfer   = 'X'. ENDIF.
+    ENDLOOP.
 
     IF lv_has_selscr = 'X' AND lv_has_filein = 'X'.
       ls_row-input_type = 'Sel.Screen+File'.
@@ -736,24 +696,10 @@ FORM fetch_zprog.
       ls_row-input_type = 'File'.
     ENDIF.
 
-    " Output type — build concatenated label
-    lv_out = ''.
-    lv_sep = ''.
-    READ TABLE lt_write WITH TABLE KEY table_line = ls_prog-name
-      TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0.
-      lv_out = |{ lv_out }{ lv_sep }Print|.  lv_sep = '+'.
-    ENDIF.
-    READ TABLE lt_alv WITH TABLE KEY table_line = ls_prog-name
-      TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0.
-      lv_out = |{ lv_out }{ lv_sep }ALV|.    lv_sep = '+'.
-    ENDIF.
-    READ TABLE lt_xfer WITH TABLE KEY table_line = ls_prog-name
-      TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0.
-      lv_out = |{ lv_out }{ lv_sep }File|.
-    ENDIF.
+    lv_out = ''. lv_sep = ''.
+    IF lv_has_write = 'X'. lv_out = |{ lv_out }{ lv_sep }Print|. lv_sep = '+'. ENDIF.
+    IF lv_has_alv   = 'X'. lv_out = |{ lv_out }{ lv_sep }ALV|.   lv_sep = '+'. ENDIF.
+    IF lv_has_xfer  = 'X'. lv_out = |{ lv_out }{ lv_sep }File|.               ENDIF.
     ls_row-output_type = lv_out.
 
     APPEND ls_row TO gt_zprog.
@@ -820,7 +766,7 @@ FORM display_alv.
           lo_zc->get_column( 'PROGNAME'    )->set_long_text( 'Program Name' ).
           lo_zc->get_column( 'PROG_TXT'    )->set_long_text( 'Description' ).
           lo_zc->get_column( 'PROG_TYPE'   )->set_long_text( 'Program Type' ).
-          lo_zc->get_column( 'HAS_TCODE'   )->set_long_text( 'Has TCode' ).
+          lo_zc->get_column( 'TCODE'       )->set_long_text( 'TCode' ).
           lo_zc->get_column( 'DEVCLASS'    )->set_long_text( 'Package' ).
           lo_zc->get_column( 'INPUT_TYPE'  )->set_long_text( 'Input' ).
           lo_zc->get_column( 'OUTPUT_TYPE' )->set_long_text( 'Output' ).
