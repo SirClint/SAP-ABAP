@@ -33,7 +33,8 @@
 *&              are hardcoded to '01' — always constant in this system)
 *&   s_auart  - order-type filter
 *&   s_erdat  - date range (default: last 180 days; required for billing/trans views)
-*&   p_noise  - Exclude suspected noise programs (default: checked)
+*&   p_noise  - Exclude noise programs (TEST/TEMP/COPY/OLD/BAK/DEL/DEMO)
+*&   p_exec/p_fgrp/p_mpol/p_clas/p_subs - object types to include
 *&
 *& Tables read (READ-ONLY; no UPDATE / INSERT / MODIFY / DELETE /
 *& COMMIT against any database table — internal-table DELETE
@@ -142,6 +143,20 @@ DATA:
   gt_zprog         TYPE TABLE OF ty_zprog.
 
 *----------------------------------------------------------------------*
+* SELECTION SCREEN LABEL CONSTANTS
+* Used by SELECTION-SCREEN COMMENT for Z Program Options sub-panel.
+*----------------------------------------------------------------------*
+DATA:
+  gc_zpopt TYPE c LENGTH 35 VALUE 'Z Program Options:',
+  gc_noise TYPE c LENGTH 25 VALUE 'Exclude Noise Programs',
+  gc_types TYPE c LENGTH 15 VALUE 'Types:',
+  gc_exec  TYPE c LENGTH 11 VALUE 'Executable',
+  gc_fgrp  TYPE c LENGTH 11 VALUE 'Func.Group',
+  gc_mpol  TYPE c LENGTH 11 VALUE 'Module Pool',
+  gc_clas  TYPE c LENGTH 7  VALUE 'Class',
+  gc_subs  TYPE c LENGTH 10 VALUE 'Subr.Pool'.
+
+*----------------------------------------------------------------------*
 * SELECTION SCREEN
 *
 * Text elements are maintained in SE38 -> Goto -> Text Elements.
@@ -161,8 +176,14 @@ DATA:
 *   R_TRANS   "Transactional Summary"
 *   R_DFLOW   "Order to Invoice Document Flow"
 *   R_ZPROG   "Z Program Inventory"
-*   P_NOISE   "Exclude Suspected Noise"
-*   TEXT-004  "Z Program Options"
+*
+* Z Program sub-options (appear only when R_ZPROG is selected):
+*   P_NOISE   "Exclude Noise" (label via gc_noise)
+*   P_EXEC    Executable programs (subc = '1')
+*   P_FGRP    Function groups  (subc = 'F')
+*   P_MPOL    Module pools     (subc = 'M')
+*   P_CLAS    Classes          (subc = 'K')
+*   P_SUBS    Subroutine pools (subc = 'S')
 *----------------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
   SELECT-OPTIONS: s_vkorg FOR vbak-vkorg,
@@ -178,11 +199,25 @@ SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
               r_trans  RADIOBUTTON GROUP r1,
               r_dflow  RADIOBUTTON GROUP r1,
               r_zprog  RADIOBUTTON GROUP r1.
+  SELECTION-SCREEN COMMENT /1(35) gc_zpopt MODIF ID zpg.
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS p_noise AS CHECKBOX DEFAULT 'X' MODIF ID zpg.
+    SELECTION-SCREEN COMMENT (25) gc_noise MODIF ID zpg.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT (15) gc_types MODIF ID zpg.
+    PARAMETERS p_exec AS CHECKBOX DEFAULT 'X' MODIF ID zpg.
+    SELECTION-SCREEN COMMENT (11) gc_exec  MODIF ID zpg.
+    PARAMETERS p_fgrp AS CHECKBOX DEFAULT 'X' MODIF ID zpg.
+    SELECTION-SCREEN COMMENT (11) gc_fgrp  MODIF ID zpg.
+    PARAMETERS p_mpol AS CHECKBOX DEFAULT 'X' MODIF ID zpg.
+    SELECTION-SCREEN COMMENT (11) gc_mpol  MODIF ID zpg.
+    PARAMETERS p_clas AS CHECKBOX           MODIF ID zpg.
+    SELECTION-SCREEN COMMENT (7)  gc_clas  MODIF ID zpg.
+    PARAMETERS p_subs AS CHECKBOX           MODIF ID zpg.
+    SELECTION-SCREEN COMMENT (10) gc_subs  MODIF ID zpg.
+  SELECTION-SCREEN END OF LINE.
 SELECTION-SCREEN END OF BLOCK b3.
-
-SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE TEXT-004.
-  PARAMETERS: p_noise AS CHECKBOX DEFAULT 'X'.
-SELECTION-SCREEN END OF BLOCK b4.
 
 *----------------------------------------------------------------------*
 * INITIALIZATION
@@ -197,6 +232,18 @@ INITIALIZATION.
 *----------------------------------------------------------------------*
 * SELECTION SCREEN VALIDATION
 *----------------------------------------------------------------------*
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF screen-group1 = 'ZPG'.
+      IF r_zprog = abap_true.
+        screen-active = 1.
+      ELSE.
+        screen-active = 0.
+      ENDIF.
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
+
 AT SELECTION-SCREEN.
   IF s_erdat[] IS INITIAL AND
      ( r_biltyp = abap_true OR r_trans = abap_true OR r_dflow = abap_true ).
@@ -580,6 +627,18 @@ FORM fetch_zprog.
     RETURN.
   ENDIF.
 
+  " Apply object type filter
+  LOOP AT lt_trdir INTO DATA(ls_type_chk).
+    CASE ls_type_chk-subc.
+      WHEN '1'. IF p_exec <> 'X'. DELETE lt_trdir INDEX sy-tabix. ENDIF.
+      WHEN 'F'. IF p_fgrp <> 'X'. DELETE lt_trdir INDEX sy-tabix. ENDIF.
+      WHEN 'M'. IF p_mpol <> 'X'. DELETE lt_trdir INDEX sy-tabix. ENDIF.
+      WHEN 'K'. IF p_clas <> 'X'. DELETE lt_trdir INDEX sy-tabix. ENDIF.
+      WHEN 'S'. IF p_subs <> 'X'. DELETE lt_trdir INDEX sy-tabix. ENDIF.
+    ENDCASE.
+  ENDLOOP.
+  IF lt_trdir IS INITIAL. RETURN. ENDIF.
+
   " 2. Short descriptions — SELECT * avoids field-name validation against TRDIRT
   SELECT *
     FROM trdirt
@@ -611,7 +670,7 @@ FORM fetch_zprog.
       DATA(lv_pnm) = to_upper( ls_nm_chk-name ).
       IF lv_pnm CS 'TEST' OR lv_pnm CS 'TEMP' OR lv_pnm CS 'TMP'
          OR lv_pnm CS 'COPY' OR lv_pnm CS 'OLD'
-         OR lv_pnm CS 'BAK'  OR lv_pnm CS 'DEL'.
+         OR lv_pnm CS 'BAK'  OR lv_pnm CS 'DEL' OR lv_pnm CS 'DEMO'.
         INSERT ls_nm_chk-name INTO TABLE lt_noise.
       ENDIF.
     ENDLOOP.
@@ -621,7 +680,7 @@ FORM fetch_zprog.
       IF lv_dtxt CS 'TEST'   OR lv_dtxt CS 'TEMP'
          OR lv_dtxt CS 'COPY'    OR lv_dtxt CS 'OLD'
          OR lv_dtxt CS 'UNUSED'  OR lv_dtxt CS 'DELETE'
-         OR lv_dtxt CS 'WORKAROUND'.
+         OR lv_dtxt CS 'WORKAROUND' OR lv_dtxt CS 'DEMO'.
         INSERT ls_dc_chk-name INTO TABLE lt_noise.
       ENDIF.
     ENDLOOP.
